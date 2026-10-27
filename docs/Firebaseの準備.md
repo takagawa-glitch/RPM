@@ -81,8 +81,9 @@ Google が提供している、アプリ用の「保管庫」と「受付」の�
    rules_version = '2';
    service cloud.firestore {
      match /databases/{database}/documents {
-       match /users/{uid}/materials/{materialId} {
-         allow read, write: if request.auth != null && request.auth.uid == uid;
+       match /users/{uid}/{collection}/{docId} {
+         allow read, write: if request.auth != null && request.auth.uid == uid
+           && collection in ['materials', 'goals'];
        }
      }
    }

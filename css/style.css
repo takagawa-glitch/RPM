@@ -1,27 +1,39 @@
-/* RPM の見た目。計器盤のような1カラム。色はすべてこの変数から使う */
+/* RPM の見た目。計器盤のような1カラム。色はすべてこの変数から使う。
+   色の考え方（やる気と読みやすさ）:
+   - 標準は明るい背景に濃い文字。暗い背景より文章の読み取りが正確になりやすい（ポジティブ極性の効果）。
+   - 主役の色は青。青は「近づく・挑戦する」気持ちと結びつきやすい（Mehta & Zhu, 2009, Science）。
+   - 達成は緑（「進んでいる・OK」の合図）。今日やる分と連続達成は暖かいオレンジで目立たせる。
+   - 赤は「失敗」を思い出させ、試験前に見ると成績が下がる報告がある（Elliot ほか, 2007）。
+     遅れの表示はオレンジにし、赤は削除とエラーだけに使う。 */
 :root {
-  --bg: #F3F5F8;
+  --bg: #F4F6FA;
   --surface: #FFFFFF;
-  --ink: #18202B;
-  --muted: #5B6676;
-  --line: #DCE1E8;
-  --rev: #2F4FD6;        /* 回転（回数）の色。濃いほど回数が多い */
-  --rev-lo: #C7D2F8;
-  --tile-0: #E3E7ED;
-  --hot: #E09A12;        /* 今日やる範囲の目印 */
-  --good: #1E9A68;
-  --warn: #C9771E;
-  --bad: #C4473E;
+  --ink: #172033;
+  --muted: #586378;
+  --line: #DDE2EC;
+  --rev: #2F55E0;        /* 回転（回数）の色。濃いほど回数が多い */
+  --rev-lo: #CAD5FA;
+  --tile-0: #E4E8F0;
+  --hot: #F08A1C;        /* 今日やる範囲・連続達成 */
+  --good: #13A06A;       /* 達成 */
+  --late: #D96A1E;       /* 遅れ（赤にしない） */
+  --bad: #C9413A;        /* 削除・エラーだけ */
   --font-display: "Chakra Petch", "Zen Kaku Gothic New", system-ui, sans-serif;
   --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
   --r: 10px;
   color-scheme: light;
 }
+:root[data-theme="dark"] {
+  --bg: #11151C; --surface: #1A1F28; --ink: #E8ECF3; --muted: #9AA4B5; --line: #2B3240;
+  --rev: #7F9BFF; --rev-lo: #28335F; --tile-0: #252B36; --hot: #F5A445;
+  --good: #3FCB91; --late: #F08C4A; --bad: #EA6A60;
+  color-scheme: dark;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111419; --surface: #191D24; --ink: #E7EBF1; --muted: #98A2B1; --line: #2A303A;
-    --rev: #7D98FF; --rev-lo: #27315E; --tile-0: #242A33; --hot: #F2B53E;
-    --good: #3EC48D; --warn: #E39A48; --bad: #E56B61;
+  :root[data-theme="auto"] {
+    --bg: #11151C; --surface: #1A1F28; --ink: #E8ECF3; --muted: #9AA4B5; --line: #2B3240;
+    --rev: #7F9BFF; --rev-lo: #28335F; --tile-0: #252B36; --hot: #F5A445;
+    --good: #3FCB91; --late: #F08C4A; --bad: #EA6A60;
     color-scheme: dark;
   }
 }
@@ -65,13 +77,13 @@ button, label.btn { cursor: pointer; }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); padding-inline: 6px; }
 .btn.ghost:hover { color: var(--ink); }
 .pill { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 99px; white-space: nowrap; border: 1px solid currentColor; }
-.pill.good { color: var(--good); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); } .pill.muted { color: var(--muted); } .pill.rev { color: var(--rev); }
+.pill.good { color: var(--good); } .pill.hot { color: var(--hot); } .pill.late { color: var(--late); } .pill.muted { color: var(--muted); } .pill.rev { color: var(--rev); }
 .note { border: 1px dashed var(--line); border-radius: var(--r); padding: 10px 14px; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
 .note.err { border-color: var(--bad); color: var(--bad); }
 .label { font-size: 12px; color: var(--muted); letter-spacing: .06em; font-weight: 500; }
 .sub { font-size: 13px; color: var(--muted); }
 .ok { color: var(--good); font-weight: 700; font-size: 13px; }
-.late-t { color: var(--bad); font-style: normal; font-weight: 700; }
+.late-t { color: var(--late); font-style: normal; font-weight: 700; }
 h2 { font-size: 16px; margin: 0; font-weight: 700; text-wrap: balance; }
 
 /* 今日のまとめ・催促 */
@@ -86,15 +98,15 @@ h2 { font-size: 16px; margin: 0; font-weight: 700; text-wrap: balance; }
 .nag span { color: var(--muted); font-size: 13px; }
 .nag.done { color: var(--good); border-color: var(--good); }
 .nag.lv2 { border-color: var(--hot); }
-.nag.lv3 { border-color: var(--warn); border-width: 2px; }
-.nag.lv4 { border-color: var(--bad); border-width: 2px; color: var(--bad); }
+.nag.lv3 { border-color: var(--hot); border-width: 2px; }
+.nag.lv4 { border-color: var(--late); border-width: 2px; color: var(--late); background: color-mix(in oklch, var(--late) 8%, var(--surface)); }
 .nag.lv3 b, .nag.lv4 b { font-size: 16px; }
 
 /* 教材カード */
 .cards { display: flex; flex-direction: column; gap: 14px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 260px); gap: 14px 22px; }
 .card .head { grid-column: 1 / -1; display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; }
-.card .head h2 { margin-right: auto; min-width: 0; overflow-wrap: anywhere; }
+.card .head h3 { margin: 0 auto 0 0; font-size: 16px; font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
 .quota { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .task { display: flex; flex-direction: column; gap: 8px; }
 .task + .task { border-top: 1px solid var(--line); padding-top: 12px; }
@@ -122,10 +134,12 @@ h2 { font-size: 16px; margin: 0; font-weight: 700; text-wrap: balance; }
 .mosaic i { width: 13px; height: 13px; border-radius: 2px; background: var(--tile-0); }
 .mosaic.mini { gap: 2px; }
 .mosaic.mini i { width: 7px; height: 7px; border-radius: 1px; }
+.mosaic.mid { gap: 2px; }
+.mosaic.mid i { width: 9px; height: 9px; border-radius: 2px; }
 .mosaic i.today, .legend i.today { box-shadow: inset 0 0 0 2px var(--hot); }
-.mosaic i.late, .legend i.late { box-shadow: inset 0 0 0 2px var(--bad); }
+.mosaic i.late, .legend i.late { box-shadow: inset 0 0 0 2px var(--late); }
 .mosaic.mini i.today { box-shadow: inset 0 0 0 1.5px var(--hot); }
-.mosaic.mini i.late { box-shadow: inset 0 0 0 1.5px var(--bad); }
+.mosaic.mini i.late { box-shadow: inset 0 0 0 1.5px var(--late); }
 .legend { display: flex; gap: 6px 12px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
 .legend span { display: inline-flex; gap: 5px; align-items: center; }
 .legend i { width: 12px; height: 12px; border-radius: 2px; background: var(--tile-0); display: inline-block; }
@@ -139,10 +153,41 @@ h2 { font-size: 16px; margin: 0; font-weight: 700; text-wrap: balance; }
 .cal i.future, .legend i.future { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
 .cal i.s-full, .legend i.s-full { background: var(--good); }
 .cal i.s-part, .legend i.s-part { background: color-mix(in oklch, var(--good) 40%, var(--tile-0)); }
-.cal i.s-zero, .legend i.s-zero { background: color-mix(in oklch, var(--bad) 55%, var(--tile-0)); }
+.cal i.s-zero, .legend i.s-zero { background: color-mix(in oklch, var(--late) 45%, var(--tile-0)); }
 .cal i.s-none, .legend i.s-none { background: var(--tile-0); }
 .cal i.s-done { background: var(--rev); }
 .cal i.is-today { box-shadow: inset 0 0 0 2px var(--hot); }
+.cal i.is-mark, .legend i.is-mark { box-shadow: inset 0 0 0 2px var(--rev); }
+
+/* 目標 */
+.gsec { display: flex; flex-direction: column; gap: 12px; }
+.gsec + .gsec { margin-top: 10px; }
+.ghead { display: flex; align-items: center; gap: 10px 16px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 2px solid var(--rev); }
+.gname { display: flex; flex-direction: column; margin-right: auto; min-width: 0; }
+.gname h2 { font-size: 20px; overflow-wrap: anywhere; }
+.count { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
+.count b { font-family: var(--font-display); font-size: 26px; color: var(--rev); }
+.count.near b { color: var(--hot); }
+.empty.sm { padding: 16px 18px; gap: 10px; }
+.stat.hero { background: var(--rev); border-color: var(--rev); }
+.stat.hero .label, .stat.hero .s, .stat.hero .v, .stat.hero .v small { color: var(--surface); }
+.cmp { display: flex; flex-direction: column; gap: 10px; }
+.cmp-row { display: grid; grid-template-columns: minmax(0, 12em) minmax(0, 1fr) 4.5em; gap: 10px; align-items: center; font-size: 13px; }
+.cmp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-bar { position: relative; height: 14px; background: var(--tile-0); border-radius: 99px; overflow: hidden; }
+.cmp-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; }
+.cmp-bar i.l { background: var(--rev-lo); }
+.cmp-bar i.r { background: var(--rev); }
+.cmp-v { text-align: right; font-weight: 600; }
+.cmp-v small { color: var(--muted); font-weight: 500; }
+.gm { display: flex; flex-direction: column; gap: 10px; }
+.gm-row { display: grid; grid-template-columns: minmax(0, 10em) minmax(0, 1fr); gap: 10px; align-items: start; }
+.gm-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.check { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500 !important; cursor: pointer; }
+.field .check input { width: auto; padding: 0; }
+.field select { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 9px 10px; width: 100%; }
+.seg.theme label { display: flex; flex-direction: column; gap: 2px; }
+.seg.theme small { font-size: 11px; color: var(--muted); font-weight: 400; }
 
 /* これからの復習 */
 .up { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px; height: 110px; align-items: end; }
@@ -193,6 +238,10 @@ h2 { font-size: 16px; margin: 0; font-weight: 700; text-wrap: balance; }
   .card { grid-template-columns: minmax(0, 1fr); }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .form { grid-template-columns: minmax(0, 1fr); }
+  .cmp-row { grid-template-columns: minmax(0, 1fr) 4.5em; }
+  .cmp-name { grid-column: 1 / -1; }
+  .gm-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .seg.theme { flex-direction: column; }
   .brand b { font-size: 28px; }
   .brand span { display: none; }
 }

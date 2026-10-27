@@ -1,10 +1,14 @@
 // 記録の保存先。
 // - ログインしていないとき: この端末のブラウザの中（localStorage）
-// - ログインしているとき: Firebase（Firestore）の users/<uid>/materials/<教材ID>。
+// - ログインしているとき: Firebase（Firestore）の
+//     users/<uid>/goals/<目標ID>      目標（例: 社労士試験）
+//     users/<uid>/materials/<教材ID>  教材と学習記録
 //   通信できないあいだも端末に控えを持ち、つながったら自動で送る。
 import { firebaseConfig } from './firebase-config.js';
 
-const LS_KEY = 'rpm-v2-materials';
+const COLS = ['materials', 'goals'];
+const LS_KEY = { materials: 'rpm-v2-materials', goals: 'rpm-v2-goals' };
+const PROP = { materials: 'mats', goals: 'goals' };
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
 
 export const cloudAvailable = () => !!(firebaseConfig && firebaseConfig.apiKey);
@@ -26,20 +30,18 @@ export function createStore(onChange) {
     mode: 'local',        // 'local' | 'cloud'
     user: null,           // { uid, email }
     mats: [],
+    goals: [],
     ready: false,
     error: '',
     fb: null,
-    unsub: null
+    unsubs: []
   };
   const emit = () => onChange(s);
 
-  function loadLocal() {
-    try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch (e) { return []; }
-  }
-  function saveLocal(list) {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(list)); return true; } catch (e) { return false; }
-  }
-  s.localMats = loadLocal;
+  const loadLocal = col => { try { return JSON.parse(localStorage.getItem(LS_KEY[col]) || '[]'); } catch (e) { return []; } };
+  const saveLocal = (col, list) => { try { localStorage.setItem(LS_KEY[col], JSON.stringify(list)); return true; } catch (e) { return false; } };
+  /** この端末だけに保存されている件数 */
+  s.localCounts = () => ({ materials: loadLocal('materials').length, goals: loadLocal('goals').length });
 
   async function loadFirebase() {
     if (s.fb) return s.fb;
@@ -55,18 +57,28 @@ export function createStore(onChange) {
     return s.fb;
   }
 
+  function stop() { s.unsubs.forEach(u => u()); s.unsubs = []; }
   function useLocal() {
-    if (s.unsub) { s.unsub(); s.unsub = null; }
-    s.mode = 'local'; s.user = null; s.mats = loadLocal(); s.ready = true; emit();
+    stop();
+    s.mode = 'local'; s.user = null;
+    s.mats = loadLocal('materials'); s.goals = loadLocal('goals');
+    s.ready = true; emit();
   }
   function useCloud(user) {
     const { fsM, db } = s.fb;
-    s.mode = 'cloud'; s.user = { uid: user.uid, email: user.email }; s.ready = false; emit();
-    if (s.unsub) s.unsub();
-    s.unsub = fsM.onSnapshot(fsM.collection(db, 'users', user.uid, 'materials'), snap => {
-      s.mats = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-      s.ready = true; s.error = ''; emit();
-    }, e => { s.error = '記録を読み込めませんでした。ページを開き直してください。（' + (e.code || '') + '）'; s.ready = true; emit(); });
+    stop();
+    s.mode = 'cloud'; s.user = { uid: user.uid, email: user.email }; s.ready = false; s.mats = []; s.goals = []; emit();
+    const got = {};
+    s.unsubs = COLS.map(col => fsM.onSnapshot(fsM.collection(db, 'users', user.uid, col), snap => {
+      s[PROP[col]] = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      got[col] = true; s.ready = COLS.every(c => got[c]); s.error = ''; emit();
+    }, e => {
+      got[col] = true; s.ready = COLS.every(c => got[c]);
+      s.error = e && e.code === 'permission-denied'
+        ? `${col === 'goals' ? '目標' : '教材'}を読み込めませんでした。管理者は Firestore のルールが最新か確かめてください（permission-denied）。`
+        : '記録を読み込めませんでした。ページを開き直してください。（' + ((e && e.code) || '') + '）';
+      emit();
+    }));
   }
 
   s.init = async () => {
@@ -86,37 +98,42 @@ export function createStore(onChange) {
   s.logout = async () => { const { authM, auth } = await loadFirebase(); await authM.signOut(auth); };
   s.resetPassword = async email => { const { authM, auth } = await loadFirebase(); await authM.sendPasswordResetEmail(auth, email); };
 
-  /** 教材を保存（全体を書き換え） */
-  s.save = async m => {
-    m = { ...m, updatedAt: Date.now() };
-    const i = s.mats.findIndex(x => x.id === m.id);
-    if (i >= 0) s.mats[i] = m; else s.mats.push(m);
-    if (s.mode === 'cloud') {
-      const { fsM, db } = s.fb;
-      const body = { ...m }; delete body.id;
-      emit();
-      await fsM.setDoc(fsM.doc(db, 'users', s.user.uid, 'materials', m.id), body);
-    } else {
-      emit();
-      if (!saveLocal(s.mats)) throw new Error('local-save-failed');
-    }
-  };
-  s.remove = async id => {
-    s.mats = s.mats.filter(x => x.id !== id);
+  /** 保存（全体を書き換え）。col は 'materials' か 'goals' */
+  s.save = async (col, obj) => {
+    obj = { ...obj, updatedAt: Date.now() };
+    const list = s[PROP[col]];
+    const i = list.findIndex(x => x.id === obj.id);
+    if (i >= 0) list[i] = obj; else list.push(obj);
     emit();
     if (s.mode === 'cloud') {
       const { fsM, db } = s.fb;
-      await fsM.deleteDoc(fsM.doc(db, 'users', s.user.uid, 'materials', id));
-    } else saveLocal(s.mats);
+      const body = { ...obj }; delete body.id;
+      await fsM.setDoc(fsM.doc(db, 'users', s.user.uid, col, obj.id), body);
+    } else if (!saveLocal(col, list)) throw new Error('local-save-failed');
+  };
+  s.remove = async (col, id) => {
+    s[PROP[col]] = s[PROP[col]].filter(x => x.id !== id);
+    emit();
+    if (s.mode === 'cloud') {
+      const { fsM, db } = s.fb;
+      await fsM.deleteDoc(fsM.doc(db, 'users', s.user.uid, col, id));
+    } else saveLocal(col, s[PROP[col]]);
   };
   /** この端末だけの記録をログイン中のアカウントへ移す */
   s.moveLocalToCloud = async () => {
-    const list = loadLocal();
-    for (const m of list) await s.save(m);
-    saveLocal([]);
-    return list.length;
+    let n = 0;
+    for (const col of COLS) {
+      const list = loadLocal(col);
+      for (const x of list) await s.save(col, x);
+      saveLocal(col, []);
+      if (col === 'materials') n = list.length;
+    }
+    return n;
   };
   /** バックアップから読み込む（同じIDは上書き） */
-  s.importAll = async list => { for (const m of list) await s.save(m); };
+  s.importAll = async ({ materials = [], goals = [] }) => {
+    for (const g of goals) await s.save('goals', g);
+    for (const m of materials) await s.save('materials', m);
+  };
   return s;
 }

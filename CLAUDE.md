@@ -27,11 +27,15 @@ claude.ai のログインは使わない（ユーザーの指示）。
 ライブラリ: なし。Firebase SDK 10.12.2 は gstatic から、同期を使うときだけ読み込む。フォントは Google Fonts。
 
 ## データ
-教材1件 = 1オブジェクト:
-`{ id, name, unit('p'|'q'), total, start, target(YYYY-MM-DD), reps, intervals[], createdAt, updatedAt, batches[] }`
+目標1件 = `{ id, name, examDate(YYYY-MM-DD), createdAt, updatedAt }`。
+教材1件 = 1オブジェクト（`goalId` と `followGoal` を持つ。followGoal が true なら、計算の前に target を目標の examDate に置き換える＝app.js の `resolve`）:
+`{ id, goalId, followGoal, name, unit('p'|'q'), total, start, target(YYYY-MM-DD), reps, intervals[], createdAt, updatedAt, batches[] }`
 - `batches` = 新しく進めた範囲ごとの記録 `{ from, to, done: ['学んだ日', '1回目の復習日', ...] }`。`done.length` がそのページの回数。
-- 保存先: ログインなし → localStorage `rpm-v2-materials`。ログイン → Firestore `users/<uid>/materials/<id>`（オフライン用の控えあり）。
-- バックアップ: `{ app:'RPM', version:2, exportedAt, materials[] }` の JSON。
+- 保存先: ログインなし → localStorage `rpm-v2-materials`・`rpm-v2-goals`。ログイン → Firestore `users/<uid>/materials/<id>`・`users/<uid>/goals/<id>`（オフライン用の控えあり）。
+- 目標を削除しても教材は消さず「目標なし」へ移す（試験日に合わせていた教材は、試験日を自分の目標日として残す）。
+- バックアップ: `{ app:'RPM', version:3, exportedAt, goals[], materials[] }` の JSON（version 2 も読める）。
+- 画面の明るさ: localStorage `rpm-theme`（light〔標準〕/ dark / auto）。index.html の先頭で data-theme を付ける。
+- 色の根拠は css/style.css の先頭のコメント。赤は削除・エラーだけに使い、遅れはオレンジ（--late）。
 
 ## 計算（plan.js）
 - 復習の日 = 前回やった日 + 間隔（既定 1,3,7,14,30）。遅れたら、やった日から数え直す。
