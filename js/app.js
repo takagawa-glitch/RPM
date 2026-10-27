@@ -1,7 +1,7 @@
 // RPM の画面。計算は plan.js、保存は store.js。
 // 目標（例: 社労士試験・試験日）の中に教材をまとめる。教材の目標日は、試験日と同じにするか、教材ごとに決める。
-import * as P from './plan.js';
-import { createStore, cloudAvailable, authMessage } from './store.js';
+import * as P from './plan.js?v=20261027b';
+import { createStore, cloudAvailable, authMessage } from './store.js?v=20261027b';
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const md = s => { const d = P.toDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; };

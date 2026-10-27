@@ -53,6 +53,9 @@ npm test
 ```
 画面の確認は、架空の教材（「サンプル教材で試す」）で行う。ローカルでは `py -m http.server 8000`。
 
+## 更新するとき（キャッシュ対策）
+GitHub Pages はファイルを10分間ブラウザに保存させる。更新したら、`index.html`・`js/app.js`・`js/store.js` の `?v=` の値（例: 20261027b）を全部同じ新しい値に変えてからプッシュする。
+
 ## Git
 - `.gitignore` で 旧版/、バックアップ JSON、ログ、`.env` などを除外。
 - `firebase-config.js` は公開前提の識別子なのでコミットしてよい。サービスアカウントの鍵（`*-service-account*.json`）は絶対にコミットしない。
