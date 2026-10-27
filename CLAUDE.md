@@ -4,7 +4,8 @@
 claude.ai のログインは使わない（ユーザーの指示）。
 
 - GitHub: https://github.com/takagawa-glitch/RPM.git（main ブランチ。リポジトリのルート＝このフォルダ）
-- 公開: GitHub Pages（main / root）
+- 公開: GitHub Pages（main / root）https://takagawa-glitch.github.io/RPM/
+- Firebase: プロジェクト `rpm-c7e54`（Authentication はメール/パスワードのみ、Firestore は asia-northeast1、ルールは firestore.rules）。2026-10-27 に端末間の同期を確認済み。
 
 ## 構成
 ```
