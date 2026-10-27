@@ -1,0 +1,9 @@
+{
+  "name": "rpm",
+  "private": true,
+  "type": "module",
+  "description": "回転数で進める学習ノルマ（RPM）",
+  "scripts": {
+    "test": "node --test tests/plan.test.js"
+  }
+}

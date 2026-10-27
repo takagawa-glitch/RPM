@@ -1,0 +1,22 @@
+# 以前の版（claude.ai 用。参照のみ）
+旧版/
+
+# 確認用の一時ファイル
+_demo*.html
+node_modules/
+
+# 利用者の記録・バックアップ（個人の学習記録）
+RPM_バックアップ_*.json
+*.csv
+*.xlsx
+*.pdf
+
+# ログ・認証情報・ローカル設定
+*.log
+処理記録/
+.env
+.env.*
+.claude/settings.local.json
+.firebase/
+firebase-debug.log
+*-service-account*.json
