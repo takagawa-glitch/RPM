@@ -6,7 +6,7 @@
 | もの | 理由 | 費用の目安 |
 |---|---|---|
 | Mac（Xcode が動くもの） | iPhone アプリは Mac の Xcode でしか作れない。Windows しかない場合は、クラウドの Mac（MacinCloud など）か、ビルドを代行するサービス（Codemagic など）を使う | Mac 本体、または月額のクラウド料金 |
-| Apple Developer Program | 複数の人に配る（TestFlight・App Store）のに必要 | 年額 12,980円（税込・2026年時点の目安。申込時に確認） |
+| Apple Developer Program | 複数の人に配る（TestFlight・App Store）のに必要。試作は無料の Apple ID で自分の iPhone に入れて試せる（7日ごとに入れ直し） | 年額99米ドル（日本ではおよそ1万3千〜1万5千円。申込時の画面で確認）。法人名で出すときは D-U-N-S 番号（無料）が必要 |
 | iPhone（確認用） | 実機での動作確認 | — |
 
 ## 段階
