@@ -25,6 +25,7 @@
 3. 無料プランでは、リポジトリを Public にしないと Pages が使えない（Pro 以上なら Private のまま可）。Public にしても、見えるのはプログラムだけで、利用者の記録は見えない。
 
 ### 同期の準備（Firebase。管理者が1回だけ行う）
+はじめての人向けの詳しい手順は [docs/Firebaseの準備.md](docs/Firebaseの準備.md)。要点は次のとおり。
 1. https://console.firebase.google.com/ でプロジェクトを作る（Google アナリティクスは不要）。
 2. 「Authentication」→「始める」→ ログイン方法で「メール/パスワード」を有効にする。
 3. 「Authentication」→「設定」→「承認済みドメイン」に `takagawa-glitch.github.io` を追加する。
