@@ -4,7 +4,7 @@
 //     users/<uid>/goals/<目標ID>      目標（例: 社労士試験）
 //     users/<uid>/materials/<教材ID>  教材と学習記録
 //   通信できないあいだも端末に控えを持ち、つながったら自動で送る。
-import { firebaseConfig } from './firebase-config.js?v=20261027b';
+import { firebaseConfig } from './firebase-config.js?v=20261029a';
 
 const COLS = ['materials', 'goals'];
 const LS_KEY = { materials: 'rpm-v2-materials', goals: 'rpm-v2-goals' };

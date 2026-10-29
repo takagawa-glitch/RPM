@@ -29,20 +29,21 @@ claude.ai のログインは使わない（ユーザーの指示）。
 ## データ
 目標1件 = `{ id, name, examDate(YYYY-MM-DD), createdAt, updatedAt }`。
 教材1件 = 1オブジェクト（`goalId` と `followGoal` を持つ。followGoal が true なら、計算の前に target を目標の examDate に置き換える＝app.js の `resolve`）:
-`{ id, goalId, followGoal, name, unit('p'|'q'), total, start, target(YYYY-MM-DD), reps, intervals[], createdAt, updatedAt, batches[] }`
-- `batches` = 新しく進めた範囲ごとの記録 `{ from, to, done: ['学んだ日', '1回目の復習日', ...] }`。`done.length` がそのページの回数。
+`{ id, goalId, followGoal, name, unit('p'|'q'), total, start, target(YYYY-MM-DD), reps, speed, createdAt, updatedAt, log }`
+- `log` = `{ 'YYYY-MM-DD': [周目, ページ] }`。その日の終わりにどこまで進んだか。
+- 2026-10-29 に「毎日復習（忘却曲線）」から「周回型」に変更。前の形の `batches`（と `intervals`）は `P.migrate` で1周目の進みとして読み替え、次に保存したときに新しい形になる。
 - 保存先: ログインなし → localStorage `rpm-v2-materials`・`rpm-v2-goals`。ログイン → Firestore `users/<uid>/materials/<id>`・`users/<uid>/goals/<id>`（オフライン用の控えあり）。
 - 目標を削除しても教材は消さず「目標なし」へ移す（試験日に合わせていた教材は、試験日を自分の目標日として残す）。
-- バックアップ: `{ app:'RPM', version:3, exportedAt, goals[], materials[] }` の JSON（version 2 も読める）。
+- バックアップ: `{ app:'RPM', version:4, exportedAt, goals[], materials[] }` の JSON（前の版も読める。前の形の教材は読み込んだあと読み替える）。
 - 画面の明るさ: localStorage `rpm-theme`（light〔標準〕/ dark / auto）。index.html の先頭で data-theme を付ける。
 - 色の根拠は css/style.css の先頭のコメント。赤は削除・エラーだけに使い、遅れはオレンジ（--late）。
 
-## 計算（plan.js）
-- 復習の日 = 前回やった日 + 間隔（既定 1,3,7,14,30）。遅れたら、やった日から数え直す。
-- 回転数が間隔の数より多いときは、最後の間隔の2倍ずつ足す。
-- 新しく学ぶ締切 = 目標日 − 間隔の合計。新しく進める量 = 残りページ ÷ 締切までの残り日数（今日を含む）。毎日組み直す（リスケ）。
-- 期間が短く間隔の合計が期間の半分を超えるときは、間隔を比例して縮める（`effIntervals`、最低1日）。
-- `dayStatus`: 新しい分と、その日に期限の来ていた復習を全部やったら 'full'。`streak` は全教材が 'full' の日の連続数（今日が途中なら昨日から）。
+## 計算（plan.js・周回型）
+- 1周目を p.1 から最後まで終えてから2周目を p.1 から……と `reps` 周回る。1周目の途中で復習は出さない（ユーザーの指示）。
+- n周目の1ページの負担 = speed^(n-1)（下限0.1。speed は 0.5〔標準〕/0.7/1）。後の周ほど短い日数で回る。
+- 今日のノルマ = 昨日までに残った負担 ÷ 今日を含む目標日までの残り日数 を、ページ数に戻したもの（`quota`）。毎日組み直す（リスケ）。目標日を過ぎたら残り全部。
+- `roundPlan`: 周ごとの終わった日／いまのペースでの終わる予定日。`pace`: 最初の計画（負担を毎日均等）との差。
+- `dayStatus`: その日のノルマを達成したら 'full'。`streak` は全教材が 'full' の日の連続数（今日が途中なら昨日から）。
 
 ## 処理記録・起動エラー
 共通ルールの処理記録・error.log は、顧問先データを扱う Windows の業務ツール向けのため対象外。エラーは画面のメッセージで知らせる。

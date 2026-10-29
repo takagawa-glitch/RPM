@@ -1,7 +1,8 @@
 // RPM の画面。計算は plan.js、保存は store.js。
 // 目標（例: 社労士試験・試験日）の中に教材をまとめる。教材の目標日は、試験日と同じにするか、教材ごとに決める。
-import * as P from './plan.js?v=20261027b';
-import { createStore, cloudAvailable, authMessage } from './store.js?v=20261027b';
+// 教材は周回型: p.1 から最後まで回り、2周目、3周目……と後の周ほど速く回る（plan.js）。
+import * as P from './plan.js?v=20261029a';
+import { createStore, cloudAvailable, authMessage } from './store.js?v=20261029a';
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const md = s => { const d = P.toDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
@@ -21,7 +22,8 @@ const store = createStore(() => { if (ui.view !== 'form' && ui.view !== 'goalfor
 const goalById = id => store.goals.find(g => g.id === id) || null;
 const goalOf = m => (m.goalId ? goalById(m.goalId) : null);
 /** 試験日に合わせる教材は、目標日を試験日に置き換えて計算する */
-const resolve = m => { const g = goalOf(m); return g && m.followGoal ? { ...m, target: g.examDate } : m; };
+// 前の形（毎日復習）の記録は、1周目の進みとして読み替える（次に保存したときに新しい形で保存される）
+const resolve = m0 => { const m = P.migrate(m0); const g = goalOf(m); return g && m.followGoal ? { ...m, target: g.examDate } : m; };
 const allMats = () => store.mats.map(resolve).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 const byId = id => { const m = store.mats.find(x => x.id === id); return m ? resolve(m) : null; };
 const goalsSorted = () => store.goals.slice().sort((a, b) => (a.examDate < b.examDate ? -1 : a.examDate > b.examDate ? 1 : (a.createdAt || 0) - (b.createdAt || 0)));
@@ -62,8 +64,8 @@ function mosaic(m, d, size) {
   for (let s = 1; s <= m.total; s += k) {
     const e = Math.min(m.total, s + k - 1);
     let c = Infinity, mk = '';
-    for (let p = s; p <= e; p++) { c = Math.min(c, count[p]); if (mark[p] === 'late') mk = 'late'; else if (mark[p] && !mk) mk = mark[p]; }
-    const tip = `${m.name} ${range(m, s, e)}：${c}回${mk === 'late' ? '・復習が遅れています' : mk === 'today' ? '・今日やる' : ''}`;
+    for (let p = s; p <= e; p++) { c = Math.min(c, count[p]); if (mark[p]) mk = mark[p]; }
+    const tip = `${m.name} ${range(m, s, e)}：${c}回${mk === 'today' ? '・今日やる' : ''}`;
     html += `<i class="${mk}" style="${tileColor(m, c)}" title="${esc(tip)}"></i>`;
   }
   return `<div class="mosaic ${size || ''}" role="img" aria-label="${esc(m.name)}の回転モザイク">${html}</div>`;
@@ -72,16 +74,16 @@ function mosaicLegend(reps) {
   const m = { reps };
   const steps = reps <= 6 ? [...Array(reps)].map((_, i) => i + 1) : [1, Math.ceil(reps / 2), reps];
   return `<div class="legend"><span><i></i>まだ</span>${steps.map(c => `<span><i style="${tileColor(m, c)}"></i>${c}回</span>`).join('')}
-    <span><i class="today"></i>今日やる</span><span><i class="late"></i>復習が遅れている</span></div>`;
+    <span><i class="today"></i>今日やる</span></div>`;
 }
 const legendRel = `<div class="legend"><span><i></i>まだ</span><span><i style="background:color-mix(in oklch, var(--rev) 28%, var(--rev-lo))"></i>1回</span><span><i style="background:color-mix(in oklch, var(--rev) 64%, var(--rev-lo))"></i>半分</span><span><i style="background:var(--rev)"></i>目標の回数</span>
-  <span><i class="today"></i>今日やる</span><span><i class="late"></i>復習が遅れている</span></div>`;
+  <span><i class="today"></i>今日やる</span></div>`;
 
 /** 日ごとのモザイク。statusOf(day) が 'full'|'part'|'zero'|'none'|'done' を返す */
 function calendar(start, end, d, statusOf, marks) {
   let html = '';
   for (let i = 0; i < P.toDate(start).getDay(); i++) html += '<i class="blank"></i>';
-  const names = { full: '全部できた', part: '一部だけ', zero: '記録なし', none: 'やることなし', done: '完了後' };
+  const names = { full: '全部できた', part: '一部だけ', zero: '記録なし', none: '開始前', done: '完了後' };
   for (let i = 0; i <= P.diffDays(start, end); i++) {
     const day = P.addDays(start, i);
     let cls, tip;
@@ -93,7 +95,7 @@ function calendar(start, end, d, statusOf, marks) {
   }
   const dl = WD.map((w, i) => `<span>${i % 2 ? w : ''}</span>`).join('');
   return `<div class="cal-wrap"><div class="cal-days">${dl}</div><div class="cal-scroll"><div class="cal" role="img" aria-label="日ごとの達成モザイク">${html}</div></div></div>
-  <div class="legend"><span><i class="s-full"></i>全部できた</span><span><i class="s-part"></i>一部だけ</span><span><i class="s-zero"></i>記録なし</span><span><i class="s-none"></i>やることなし</span><span><i class="future"></i>これから</span><span><i class="future is-mark"></i>${Object.values(marks).includes('試験日') ? '試験日' : '目標日'}</span></div>`;
+  <div class="legend"><span><i class="s-full"></i>全部できた</span><span><i class="s-part"></i>一部だけ</span><span><i class="s-zero"></i>記録なし</span><span><i class="s-none"></i>開始前</span><span><i class="future"></i>これから</span><span><i class="future is-mark"></i>${Object.values(marks).includes('試験日') ? '試験日' : '目標日'}</span></div>`;
 }
 function goalDayStatus(mats, day) {
   const sts = mats.map(m => P.dayStatus(m, day)).filter(s => s !== 'none' && s !== 'done');
@@ -102,42 +104,39 @@ function goalDayStatus(mats, day) {
   if (sts.some(s => s === 'full' || s === 'part')) return 'part';
   return 'zero';
 }
-/** これから14日の復習の量 */
-function upcoming(mats, d, unit) {
-  const days = [...Array(14)].map((_, i) => P.addDays(d, i + 1));
-  const load = days.map(day => mats.reduce((a, m) => a + (m.batches || []).reduce((x, b) => (P.nextDue(m, b) === day ? x + b.to - b.from + 1 : x), 0), 0));
-  const max = Math.max(1, ...load);
-  const cols = days.map((day, i) => `<div class="up-col" title="${mdw(day)}：復習 ${load[i]}${unit}"><span class="up-n num">${load[i] || ''}</span><i style="height:${Math.round(load[i] / max * 100)}%"></i><span class="up-d">${P.toDate(day).getDate()}</span></div>`).join('');
-  return `<div class="up" role="img" aria-label="これから14日の復習の量">${cols}</div>`;
+/** 周回の予定（帯と一覧） */
+function roundsPanel(m, d, withList = true) {
+  const plan = P.roundPlan(m, d);
+  const segs = plan.map((x, i) => {
+    const s = i === 0 ? m.start : P.addDays(plan[i - 1].date, 1);
+    return { ...x, s, days: Math.max(1, P.diffDays(s, x.date) + 1) };
+  });
+  const bar = segs.map(x => `<i class="rp-${x.state}" style="flex-grow:${x.days};${tileColor(m, x.r)}" title="${x.r}周目 ${md(x.s)}〜${md(x.date)}"><span>${x.r}</span></i>`).join('');
+  const rows = segs.map(x => `<li class="rp-${x.state}"><b>${x.r}周目</b><span>${x.state === 'done' ? `✓ ${mdw(x.date)}に終わりました`
+    : x.state === 'now' ? `いまここ・${mdw(x.date)}ごろ終わる予定`
+    : `${md(x.s)}〜${md(x.date)}（${x.days}日）の予定`}</span></li>`).join('');
+  return `<div class="rp" role="img" aria-label="周回の予定">${bar}</div>${withList ? `<ol class="rp-list">${rows}</ol>` : ''}`;
 }
 function today(m, d) {
-  const q = P.newQuota(m, d);
-  const r = P.reviewsFor(m, d);
-  const newDone = Math.max(0, P.learnedThrough(m, d) - q.g0);
-  const newLeft = Math.max(0, q.units - newDone);
-  return { q, r, newDone, newLeft, revLeft: r.due.length, finished: P.isFinished(m, d) };
+  const q = P.quota(m, d);
+  const done = Math.max(0, P.posThrough(m, d) - q.g0);
+  return { q, done, left: Math.max(0, q.units - done), finished: P.isFinished(m, d) };
 }
 function statusPill(m, d) {
   const t = today(m, d);
   if (t.finished) return '<span class="pill rev">完了</span>';
   if (t.q.beforeStart) return `<span class="pill muted">${md(m.start)}から開始</span>`;
   let s;
-  if (!t.newLeft && !t.revLeft) s = '<span class="pill good">今日の分は完了</span>';
-  else {
-    const parts = [];
-    if (t.newLeft) parts.push(`新しく${t.newLeft}`);
-    if (t.revLeft) parts.push(`復習${t.revLeft}件`);
-    s = `<span class="pill hot">あと ${parts.join('・')}</span>`;
-  }
-  if (t.q.overdue && !t.q.allLearned) s += ' <span class="pill late">新しく学ぶ締切を過ぎています</span>';
-  if (t.r.due.some(x => x.late > 0)) s += ' <span class="pill late">復習が遅れています</span>';
+  if (!t.left) s = '<span class="pill good">今日のノルマ達成</span>';
+  else s = `<span class="pill hot">あと ${t.left}${uw(m)}</span>`;
+  if (t.q.overdue) s += ' <span class="pill late">目標日を過ぎています</span>';
   return s;
 }
 function paceText(m, d) {
   const p = P.pace(m, d);
-  if (p === null || P.learnedBefore(m, d) >= m.total) return '';
-  if (p === 0) return '新しく学ぶペース: 予定どおり';
-  return p > 0 ? `新しく学ぶペース: 予定より ${p}${uw(m)} 先行` : `新しく学ぶペース: 予定より ${-p}${uw(m)} 遅れ`;
+  if (p === null || P.isFinished(m, d)) return '';
+  if (p === 0) return 'ペース: 予定どおり';
+  return p > 0 ? `ペース: 予定より ${p}${uw(m)} 先行` : `ペース: 予定より ${-p}${uw(m)} 遅れ`;
 }
 const sumCount = (m, d) => { const { count } = P.pageStates(m, d); let s = 0; for (let p = 1; p <= m.total; p++) s += count[p]; return s; };
 const avgRot = (m, d) => sumCount(m, d) / m.total;
@@ -145,37 +144,31 @@ function daysTo(date, d) {
   const n = P.diffDays(d, date);
   return n > 0 ? `あと <b class="num">${n}</b> 日` : n === 0 ? '<b>今日</b>' : '終了';
 }
-
-function newBlock(m, d, t) {
-  if (t.q.allLearned && P.learnedBefore(m, d) >= m.total) return '';
-  const bar = t.q.units ? Math.min(100, Math.round(t.newDone / t.q.units * 100)) : 100;
+const at = (m, u) => { const w = P.where(m, u); return `${w.r}周目 ${pos(m, w.p)}`; };
+function quotaBlock(m, d, t) {
+  const bar = t.q.units ? Math.min(100, Math.round(t.done / t.q.units * 100)) : 100;
   return `<div class="task">
-    <div class="task-h"><span class="label">新しく進める</span>${t.newLeft ? '' : '<span class="ok">✓ 完了</span>'}</div>
-    <div class="big"><span class="n num">${t.q.units}</span><span class="u">${uw(m)}</span><span class="rg">${range(m, t.q.g0 + 1, t.q.gT)}</span></div>
-    <div class="bar" title="今日の進み ${t.newDone}/${t.q.units}"><i style="width:${bar}%"></i></div>
+    <div class="task-h"><span class="label">${t.q.beforeStart ? '開始日のノルマ' : '今日のノルマ'}</span>${t.left || t.q.beforeStart ? '' : '<span class="ok">✓ 達成</span>'}</div>
+    <div class="big"><span class="n num">${t.q.units}</span><span class="u">${uw(m)}</span></div>
+    <div class="rg"><b>${at(m, t.q.g0 + 1)}</b> から <b>${at(m, t.q.gT)}</b> まで</div>
+    <div class="bar" title="今日の進み ${t.done}/${t.q.units}"><i style="width:${bar}%"></i></div>
     ${t.q.beforeStart ? '' : recForm(m, d, false)}
   </div>`;
 }
 function recForm(m, d, withDate) {
-  const g = P.learnedThrough(m, d);
+  const g = P.posThrough(m, d);
+  const q = P.quota(m, d);
+  const r = P.curRound(m, Math.max(g, q.g0));
+  const opts = [...Array(m.reps)].map((_, i) => `<option value="${i + 1}"${i + 1 === r ? ' selected' : ''}>${i + 1}周目</option>`).join('');
+  const ph = q.finished ? m.total : P.where(m, q.gT).p;
   return `<form class="rec" data-rec="${m.id}">
     ${withDate ? `<input type="date" id="rd-${m.id}" value="${d}" max="${P.todayStr()}" min="${m.start}" aria-label="日付">` : ''}
+    <select id="rr-${m.id}" aria-label="周目">${opts}</select>
     <span class="lbl">${m.unit === 'q' ? '問' : 'p.'}</span>
-    <input type="number" id="rp-${m.id}" min="0" max="${m.total}" inputmode="numeric" placeholder="${g || ''}" aria-label="どこまで進んだか">
+    <input type="number" id="rp-${m.id}" min="0" max="${m.total}" inputmode="numeric" placeholder="${ph}" aria-label="どこまで進んだか">
     <span class="lbl">まで進んだ</span>
     <button class="btn primary" type="submit">記録</button>
   </form>`;
-}
-function reviewBlock(m, d, t) {
-  if (!t.r.due.length && !t.r.doneToday.length) return '';
-  const items = t.r.due.map(x => `<li><span><b>${range(m, x.b.from, x.b.to)}</b> <span class="sub">${x.rep}回目${x.late > 0 ? ` <em class="late-t">${x.late}日遅れ</em>` : ''}</span></span>
-      <button class="btn primary sm" data-act="rev" data-id="${m.id}" data-from="${x.b.from}">復習した</button></li>`).join('')
-    + t.r.doneToday.map(x => `<li class="done"><span>✓ <b>${range(m, x.b.from, x.b.to)}</b> <span class="sub">${x.rep}回目</span></span>
-      <button class="btn ghost sm" data-act="undo" data-id="${m.id}" data-from="${x.b.from}">取り消す</button></li>`).join('');
-  return `<div class="task">
-    <div class="task-h"><span class="label">復習（忘れる前に）</span>${t.revLeft ? `<span class="sub">${P.pagesOf(t.r.due)}${uw(m)}</span>` : '<span class="ok">✓ 完了</span>'}</div>
-    <ul class="revs">${items}</ul>
-  </div>`;
 }
 
 /* ---------- 画面 ---------- */
@@ -192,37 +185,34 @@ function header() {
 function nag(mats, d) {
   const act = mats.filter(m => { const t = today(m, d); return !t.finished && !t.q.beforeStart; });
   if (!act.length) return '';
-  const left = act.map(m => ({ m, t: today(m, d) })).filter(x => x.t.newLeft || x.t.revLeft);
+  const left = act.map(m => ({ m, t: today(m, d) })).filter(x => x.t.left);
   const st = P.streak(mats, d);
   const head = `<div class="summary"><div class="gauge" aria-hidden="true">${act.map((m, i) => `<i class="${i < act.length - left.length ? 'on' : ''}"></i>`).join('')}</div>
     <div class="txt">今日の分 <b class="num">${act.length - left.length}</b> / ${act.length} 教材 完了</div><div class="txt streak">連続達成 <b class="num">${st}</b> 日</div></div>`;
   if (!left.length) return head + '<div class="nag done">今日の分はすべて終わりました。明日もこの調子で。</div>';
   const h = new Date().getHours();
   const keep = st > 0 ? `今日やらないと、${st}日続いた連続達成が 0 に戻ります。` : '';
-  const late = left.some(x => x.t.r.due.some(y => y.late > 0)) ? '復習が遅れると、覚えたことをどんどん忘れていきます。' : '';
+  const late = left.some(x => (P.pace(x.m, d) || 0) < 0) ? '予定より遅れています。今日の分で取り戻しましょう。' : '';
   let lv, msg;
   if (h < 12) { lv = 1; msg = '今日の分を朝のうちに片付けませんか。'; }
   else if (h < 18) { lv = 2; msg = `まだ今日の分が残っています。${late || keep}`; }
   else if (h < 22) { lv = 3; msg = `夜になりました。${keep || late || '今からやりましょう。'}`; }
   else { lv = 4; msg = `今日が終わるまであと${24 - h}時間もありません。${keep}5分だけでも開きましょう。`; }
-  const list = left.map(x => `${esc(x.m.name)}（${[x.t.newLeft ? `新しく${x.t.newLeft}${uw(x.m)}` : '', x.t.revLeft ? `復習${x.t.revLeft}件` : ''].filter(Boolean).join('・')}）`).join('、');
+  const list = left.map(x => `${esc(x.m.name)}（あと${x.t.left}${uw(x.m)}）`).join('、');
   return head + `<div class="nag lv${lv}"><b>${msg}</b><span>${list}</span></div>`;
 }
 function card(m, d) {
   const t = today(m, d);
   let main;
   if (t.finished) main = `<div class="big"><span class="n num">${m.reps}</span><span class="u">回転 完了</span></div><div class="sub">おつかれさまでした。すべてのページを目標の回数やり終えました。</div>`;
-  else {
-    main = newBlock(m, d, t) + reviewBlock(m, d, t);
-    if (!main) main = '<div class="sub">今日やる分はありません。次の復習日まで休みです。</div>';
-  }
+  else main = quotaBlock(m, d, t);
   const own = goalOf(m) && !m.followGoal ? `<span>この教材の目標日 <b class="num">${md(m.target)}</b></span>` : (!goalOf(m) ? `<span>目標日 <b class="num">${md(m.target)}</b></span>` : '');
   return `<article class="card">
     <div class="head"><h3>${esc(m.name)}</h3>${statusPill(m, d)}</div>
     <div class="quota">${main}</div>
     <div class="side">
       ${mosaic(m, d, 'mini')}
-      <div class="meta"><span>平均 <b class="num">${avgRot(m, d).toFixed(1)}</b> / ${m.reps} 回転</span>${own}</div>
+      <div class="meta"><span><b class="num">${avgRot(m, d).toFixed(1)}</b> / ${m.reps} 回転</span>${own}</div>
       <div class="meta"><span>${esc(paceText(m, d))}</span></div>
     </div>
     <button class="btn ghost more" data-act="open" data-id="${m.id}">詳しく見る・記録を直す →</button>
@@ -248,7 +238,7 @@ function home() {
   if (!mats.length && !goals.length) {
     return header() + `<div class="empty">
       <h2>まず目標を作りましょう</h2>
-      <p>「社労士試験」のような目標と試験日を決めて、その中に使う教材（テキスト・問題集）を登録します。教材ごとに、新しく進める量と、忘れかけたころの復習（1日後・3日後・7日後・14日後・30日後）が毎日出ます。</p>
+      <p>「社労士試験」のような目標と試験日を決めて、その中に使う教材（テキスト・問題集）を登録します。教材は1周目を最後まで進めてから2周目、3周目と回り、後の周ほど速く回る計画で、今日やる範囲が毎日出ます。</p>
       <div class="actions"><button class="btn primary" data-act="addgoal">目標を作る</button><button class="btn" data-act="sample">サンプルで試す</button></div>
     </div>`;
   }
@@ -266,11 +256,11 @@ function goalView() {
   const n = P.diffDays(d, g.examDate);
   const totalUnits = mats.reduce((a, m) => a + m.total * m.reps, 0);
   const doneUnits = mats.reduce((a, m) => a + Math.min(sumCount(m, d), m.total * m.reps), 0);
-  const leftToday = mats.reduce((a, m) => { const t = today(m, d); return a + (t.finished ? 0 : t.newLeft + P.pagesOf(t.r.due)); }, 0);
+  const leftToday = mats.reduce((a, m) => { const t = today(m, d); return a + (t.finished ? 0 : t.left); }, 0);
   const start = mats.reduce((a, m) => (a && a < m.start ? a : m.start), null);
   const end = [g.examDate, d, ...mats.map(m => m.target)].sort().pop();
   const cmp = mats.map(m => {
-    const a = avgRot(m, d), learned = P.learnedThrough(m, d) / m.total * 100;
+    const a = avgRot(m, d), learned = Math.min(1, P.posThrough(m, d) / m.total) * 100;
     return `<div class="cmp-row"><span class="cmp-name">${esc(m.name)}</span>
       <div class="cmp-bar" title="1回目が終わったページ ${Math.round(learned)}%・回転 ${a.toFixed(1)}/${m.reps}"><i class="l" style="width:${learned}%"></i><i class="r" style="width:${Math.min(100, a / m.reps * 100)}%"></i></div>
       <span class="cmp-v num">${a.toFixed(1)}<small>/${m.reps}</small></span></div>`;
@@ -299,8 +289,8 @@ function goalView() {
     ${calendar(start, end, d, day => goalDayStatus(mats.filter(m => m.start <= day), day), { [g.examDate]: '試験日' })}
   </section>
   <section class="panel">
-    <h2>これから2週間の復習 <span class="label">この目標の全教材の合計</span></h2>
-    ${upcoming(mats, d, 'ページ・問')}
+    <h2>周回の予定 <span class="label">教材ごと・いまのペースで計算</span></h2>
+    <div class="gm">${mats.map(m => `<div class="gm-row"><span class="gm-name">${esc(m.name)}</span><div>${roundsPanel(m, d, false)}</div></div>`).join('')}</div>
   </section>` : ''}
   <section class="panel">
     <div class="dhead"><h2>教材</h2><button class="btn primary sm" data-act="add" data-goal="${g.id}">＋ この目標に教材を登録</button></div>
@@ -319,32 +309,32 @@ function detail() {
   const d = P.todayStr();
   const t = today(m, d);
   const g = goalOf(m);
-  const iv = P.effIntervals(m);
-  const bs = (m.batches || []).slice().sort((a, b) => b.from - a.from);
-  const rows = bs.map((b, i) => `<tr><td>${range(m, b.from, b.to)}</td><td>${b.done.map(md).join(' → ')}</td><td class="num">${b.done.length}/${m.reps}</td>
-    <td>${P.isComplete(m, b) ? '完了' : `次 ${md(P.nextDue(m, b))}`}</td>
-    <td>${(b.done.length > 1 || i === 0) ? `<button class="btn ghost sm" data-act="undo" data-id="${m.id}" data-from="${b.from}">最後の1回を取り消す</button>` : ''}</td></tr>`).join('');
-  const todayPages = (t.finished ? 0 : t.newLeft) + P.pagesOf(t.r.due);
-  const marks = { [P.newCutoff(m)]: '新しく学ぶ締切', [m.target]: g && m.followGoal ? '試験日' : '目標日' };
+  const now = P.posThrough(m, d);
+  const gOf = e => (Math.min(e[0], m.reps) - 1) * m.total + Math.min(e[1], m.total);
+  const list = P.logList(m).reverse();
+  const rows = list.map(([k, e], i) => {
+    const prev = i + 1 < list.length ? gOf(list[i + 1][1]) : 0;
+    return `<tr><td>${mdw(k)}</td><td>${e[0]}周目 ${pos(m, e[1])} まで</td><td class="num">+${Math.max(0, gOf(e) - prev)}</td>
+      <td><button class="btn ghost sm" data-act="undoday" data-id="${m.id}" data-date="${k}">取り消す</button></td></tr>`;
+  }).join('');
+  const marks = { [m.target]: g && m.followGoal ? '試験日' : '目標日' };
   return `${header()}
   <div class="dhead"><button class="btn ghost" data-act="${g ? 'goal' : 'home'}" data-id="${g ? g.id : ''}">← ${g ? esc(g.name) : '一覧へ'}</button></div>
   <div class="dhead"><h1>${esc(m.name)}</h1>${statusPill(m, d)}</div>
   <div class="stats">
-    <div class="stat"><span class="label">平均の回転数</span><span class="v num">${avgRot(m, d).toFixed(2)}<small>/ ${m.reps}</small></span><span class="s">学んだページ ${P.learnedThrough(m, d)} / ${m.total}</span></div>
-    <div class="stat"><span class="label">今日の残り</span><span class="v num">${todayPages}<small>${uw(m)}</small></span><span class="s">新しく ${t.newLeft}・復習 ${P.pagesOf(t.r.due)}</span></div>
-    <div class="stat"><span class="label">新しく学ぶ締切</span><span class="v num">${md(P.newCutoff(m))}</span><span class="s">そのあとは復習だけ</span></div>
+    <div class="stat"><span class="label">回転数</span><span class="v num">${(now / m.total).toFixed(2)}<small>/ ${m.reps}</small></span><span class="s">全体の ${Math.round(now / P.TU(m) * 100)}%</span></div>
+    <div class="stat"><span class="label">今日のノルマ</span><span class="v num">${t.finished ? '—' : t.q.units}<small>${t.finished ? '' : uw(m)}</small></span><span class="s">${t.finished ? '完了しました' : `あと ${t.left}${uw(m)}`}</span></div>
+    <div class="stat"><span class="label">いまの位置</span><span class="v num" style="font-size:20px">${now ? at(m, now) : '未着手'}</span><span class="s">${esc(paceText(m, d)) || '—'}</span></div>
     <div class="stat"><span class="label">${g && m.followGoal ? '試験日' : '目標日'}</span><span class="v num">${md(m.target)}</span><span class="s">${daysTo(m.target, d)}</span></div>
   </div>
-  ${P.isCompressed(m) ? `<div class="note">期間に収めるため、復習の間隔を ${iv.join('→')} 日に縮めています（設定は ${P.baseIntervals(m).join('→')} 日）。</div>` : ''}
   <section class="panel">
     <h2>回転モザイク <span class="label">1タイル＝1${uw(m)}・色が濃いほど回数が多い</span></h2>
     ${mosaic(m, d)}
     ${mosaicLegend(m.reps)}
-    <div class="sub">${esc(paceText(m, d))}</div>
   </section>
   <section class="panel">
-    <h2>これから2週間の復習 <span class="label">日ごとの${uw(m)}数</span></h2>
-    ${upcoming([m], d, uw(m))}
+    <h2>周回の予定 <span class="label">いまのペースで計算。後の周ほど短い日数で回ります</span></h2>
+    ${roundsPanel(m, d)}
   </section>
   <section class="panel">
     <h2>日ごとの達成 <span class="label">${md(m.start)} 〜 ${md(m.target)}</span></h2>
@@ -354,11 +344,11 @@ function detail() {
     <h2>記録する・直す</h2>
     <div class="sub">日付を変えると、記録し忘れた日の分も入れられます（その日より後の記録がない場合のみ）。</div>
     ${recForm(m, d, true)}
-    ${rows ? `<div class="table-scroll"><table class="log"><thead><tr><th>範囲</th><th>やった日</th><th>回数</th><th>次の復習</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="sub">まだ記録がありません。</div>'}
+    ${rows ? `<div class="table-scroll"><table class="log"><thead><tr><th>日付</th><th>進んだところ</th><th>その日の量</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<div class="sub">まだ記録がありません。</div>'}
   </section>
   <section class="panel">
     <h2>設定</h2>
-    <div class="meta"><span>目標 <b>${g ? esc(g.name) : 'なし'}</b></span><span>全 <b class="num">${m.total}</b> ${uw(m)}</span><span>開始日 <b class="num">${md(m.start)}</b></span><span>${g && m.followGoal ? '目標日（試験日）' : '目標日'} <b class="num">${md(m.target)}</b></span><span>目標 <b class="num">${m.reps}</b> 回転</span><span>復習の間隔 <b class="num">${P.baseIntervals(m).join('→')}</b> 日</span></div>
+    <div class="meta"><span>目標 <b>${g ? esc(g.name) : 'なし'}</b></span><span>全 <b class="num">${m.total}</b> ${uw(m)}</span><span>開始日 <b class="num">${md(m.start)}</b></span><span>${g && m.followGoal ? '目標日（試験日）' : '目標日'} <b class="num">${md(m.target)}</b></span><span>目標 <b class="num">${m.reps}</b> 回転</span><span>2周目以降の速さ <b>${speedName(m.speed)}</b></span></div>
     <div class="actions">
       <button class="btn" data-act="edit" data-id="${m.id}">設定を変える</button>
       ${ui.confirmDel
@@ -367,12 +357,14 @@ function detail() {
     </div>
   </section>`;
 }
+const speedName = s => (P.SPEEDS.find(([v]) => v === s) || P.SPEEDS[0])[1];
 function form() {
-  const m = ui.id ? store.mats.find(x => x.id === ui.id) : null;
+  const raw = ui.id ? store.mats.find(x => x.id === ui.id) : null;
+  const m = raw ? P.migrate(raw) : null;
   const d = P.todayStr();
   const goals = goalsSorted();
   const preset = ui.presetGoal && goalById(ui.presetGoal) ? ui.presetGoal : (goals[0] ? goals[0].id : '');
-  const v = m || { name: '', unit: 'p', total: '', start: d, target: P.addDays(d, 90), reps: 5, intervals: P.DEFAULT_INTERVALS, goalId: preset, followGoal: true };
+  const v = m || { name: '', unit: 'p', total: '', start: d, target: P.addDays(d, 90), reps: 3, speed: P.DEFAULT_SPEED, goalId: preset, followGoal: true };
   const gid = v.goalId && goalById(v.goalId) ? v.goalId : '';
   return `${header()}
   <div class="dhead"><button class="btn ghost" data-act="${m ? 'open' : 'home'}" data-id="${m ? m.id : ''}">← もどる</button></div>
@@ -391,8 +383,8 @@ function form() {
       <div class="field"><label for="f-target">目標日</label>
         <label class="check" id="f-follow-wrap"><input type="checkbox" id="f-follow"${v.followGoal !== false ? ' checked' : ''}> <span id="f-follow-txt">試験日と同じ</span></label>
         <input id="f-target" type="date" required value="${v.target}"><span class="hint">この日までに、すべてのページを目標の回数やり終える計画にします。試験より前に仕上げたい教材は、チェックを外して早い日にします。</span></div>
-      <div class="field"><label for="f-reps">目標の回転数</label><input id="f-reps" type="number" min="1" max="10" inputmode="numeric" required value="${v.reps}"><span class="hint">1ページを何回やるか。1回目が新しく学ぶ日、2回目からが復習です。</span></div>
-      <div class="field"><label for="f-iv">復習の間隔（日）</label><input id="f-iv" value="${esc((v.intervals || P.DEFAULT_INTERVALS).join(','))}" inputmode="numeric"><span class="hint">前回やった日から何日後に復習するか。エビングハウスの忘却曲線にもとづく 1,3,7,14,30 が標準です。</span></div>
+      <div class="field"><label for="f-reps">目標の回転数</label><input id="f-reps" type="number" min="1" max="10" inputmode="numeric" required value="${v.reps}"><span class="hint">教材を何周するか。1周目を最後まで終えてから、2周目を p.1 から始めます。</span></div>
+      <div class="field"><label for="f-speed">2周目以降の速さ</label><select id="f-speed">${P.SPEEDS.map(([s, t]) => `<option value="${s}"${(v.speed ?? P.DEFAULT_SPEED) === s ? ' selected' : ''}>${t}</option>`).join('')}</select><span class="hint">「半分」なら、2周目は1周目の半分、3周目はさらに半分の日数で回る計画にします。忘れる前に次の周が来るようにするためです。</span></div>
       <div class="full plan-preview" id="preview" aria-live="polite"></div>
       ${ui.formErr ? `<div class="full err-text">${esc(ui.formErr)}</div>` : ''}
       <div class="actions full"><button class="btn primary" type="submit">${m ? '変更を保存' : '登録する'}</button></div>
@@ -422,7 +414,7 @@ function readForm() {
   return {
     name: val('f-name'), total: Number(val('f-total')), start: val('f-start'),
     target: followGoal ? g.examDate : val('f-target'),
-    reps: Number(val('f-reps')), intervals: P.parseIntervals(val('f-iv')),
+    reps: Number(val('f-reps')), speed: Number(val('f-speed')),
     unit: document.querySelector('input[name="f-unit"]:checked').value,
     goalId, followGoal
   };
@@ -433,13 +425,10 @@ function updatePreview() {
   syncFollow();
   const v = readForm();
   if (P.validateMaterial(v)) { el.textContent = ''; return; }
-  const m = { ...v, batches: [] };
-  const cut = P.newCutoff(m);
-  const days = P.diffDays(m.start, cut) + 1;
-  const iv = P.effIntervals(m);
-  el.innerHTML = `この計画では: 新しく進めるのは <b>${mdw(cut)}</b> まで（1日あたり約 <b>${Math.ceil(m.total / days)}${uw(m)}</b>）。`
-    + (m.reps > 1 ? `復習は ${iv.map(x => x + '日後').join('→')}。` : '')
-    + (P.isCompressed(m) ? '<br><span class="late-t">期間が短いため、復習の間隔を縮めています。目標日を延ばすか回転数を減らすと、忘却曲線どおりの間隔で復習できます。</span>' : '');
+  const m = { ...v, log: {} };
+  const plan = P.roundPlan(m, m.start);
+  el.innerHTML = `この計画では: はじめは1日あたり約 <b>${P.quota(m, m.start).units}${uw(m)}</b>。`
+    + plan.map(x => `${x.r}周目は <b>${md(x.date)}</b> まで`).join('、') + '。';
 }
 function goalForm() {
   const g = ui.id ? goalById(ui.id) : null;
@@ -531,14 +520,8 @@ document.addEventListener('click', e => {
     go(g ? 'goal' : 'home', g ? g.id : null); toast(`「${m.name}」を削除しました`);
   }
   else if (act === 'delgoal') deleteGoal(id);
-  else if (act === 'rev') {
-    const r = P.recordReview(m, Number(b.dataset.from), P.todayStr());
-    const left = today(r.m, P.todayStr());
-    saveMat(r.m, !left.newLeft && !left.revLeft ? '今日の分はすべて完了です' : '復習を記録しました');
-  }
-  else if (act === 'undo') {
-    const r = P.undoLast(m, Number(b.dataset.from));
-    if (r.error) toast(r.error); else saveMat(r.m, '取り消しました');
+  else if (act === 'undoday') {
+    saveMat(P.undoDay(m, b.dataset.date).m, `${mdw(b.dataset.date)}の記録を取り消しました`);
   }
   else if (act === 'sample') addSample();
   else if (act === 'logout') store.logout().then(() => toast('ログアウトしました。この端末だけの記録を表示しています'));
@@ -562,14 +545,20 @@ document.addEventListener('submit', e => {
   const m = id && byId(id);
   if (!m) return;
   const raw = document.getElementById('rp-' + id).value.trim();
+  const r = Number(document.getElementById('rr-' + id).value);
   const dateEl = document.getElementById('rd-' + id);
   const day = dateEl ? dateEl.value : P.todayStr();
   if (!day || day > P.todayStr()) return toast('日付は今日までの日を選んでください');
   if (raw === '') return toast('どこまで進んだか、数字を入れてください');
-  const r = P.recordNew(m, day, Number(raw));
-  if (r.error) return toast(r.error);
-  const t = today(r.m, P.todayStr());
-  saveMat(r.m, day !== P.todayStr() ? `${mdw(day)}の分を記録しました` : P.learnedThrough(r.m, day) >= m.total ? '全ページを1回やり終えました。あとは復習です' : !t.newLeft ? (t.revLeft ? `新しく進める分は完了。あとは復習${t.revLeft}件です` : '今日の分はすべて完了です') : `記録しました。新しく進める分はあと${t.newLeft}${uw(m)}`);
+  const res = P.recordProgress(m, day, r, Number(raw));
+  if (res.error) return toast(res.error);
+  const t = today(res.m, P.todayStr());
+  const g = P.posThrough(res.m, day);
+  const roundDone = g > P.posBefore(m, day) && g % m.total === 0;
+  saveMat(res.m, day !== P.todayStr() ? `${mdw(day)}の分を記録しました`
+    : t.finished ? `${m.reps}回転、すべて終わりました！おつかれさまでした`
+    : roundDone ? `${g / m.total}周目が終わりました！次は${g / m.total + 1}周目の${pos(m, 1)}からです`
+    : !t.left ? '今日のノルマ達成です' : `記録しました。今日はあと${t.left}${uw(m)}`);
 });
 document.addEventListener('input', e => { if (e.target.closest('#matform')) updatePreview(); });
 document.addEventListener('change', e => {
@@ -592,9 +581,10 @@ function saveForm() {
   const v = readForm();
   const err = P.validateMaterial(v);
   if (err) { ui.formErr = err; render(); return; }
-  const old = ui.id ? store.mats.find(x => x.id === ui.id) : null;
-  if (old && (old.batches || []).some(b => b.to > v.total)) { ui.formErr = `すでに ${pos(old, P.learnedThrough(old, P.todayStr()))} まで記録があるため、それより少ない数にはできません。`; render(); return; }
-  const m = old ? { ...old, ...v } : { id: newId('m'), createdAt: Date.now(), batches: [], ...v };
+  const raw = ui.id ? store.mats.find(x => x.id === ui.id) : null;
+  const old = raw ? P.migrate(raw) : null;
+  if (old && P.logList(old).some(([, e]) => e[1] > v.total || e[0] > v.reps)) { ui.formErr = 'これまでの記録より少ないページ数・回転数にはできません。'; render(); return; }
+  const m = old ? { ...old, ...v } : { id: newId('m'), createdAt: Date.now(), log: {}, ...v };
   saveMat(m, old ? '設定を保存しました。今日の量を計算し直しました' : `「${v.name}」を登録しました`);
   const g = goalById(m.goalId);
   if (old) go('detail', m.id); else if (g) go('goal', g.id); else go('home');
@@ -618,7 +608,7 @@ function saveGoalForm() {
 function deleteGoal(id) {
   const g = goalById(id);
   // 中の教材は消さずに「目標なし」へ。試験日に合わせていた教材は、試験日を自分の目標日として残す
-  for (const m of store.mats.filter(x => x.goalId === id)) saveMat({ ...m, goalId: null, followGoal: false, target: m.followGoal ? g.examDate : m.target });
+  for (const m of store.mats.filter(x => x.goalId === id)) saveMat({ ...P.migrate(m), goalId: null, followGoal: false, target: m.followGoal ? g.examDate : m.target });
   store.remove('goals', id).catch(() => toast('削除できませんでした。もう一度お試しください。'));
   go('home'); toast(`目標「${g.name}」を削除しました。教材は「目標なし」に移しました`);
 }
@@ -629,18 +619,19 @@ function addSample() {
   const sim = (m, skip) => {
     for (let day = m.start; day < d; day = P.addDays(day, 1)) {
       if (skip.includes(P.diffDays(day, d))) continue;
-      if (P.diffDays(day, d) !== 2) for (const x of P.reviewsFor(m, day).due) m = P.recordReview(m, x.b.from, day).m;
-      const q = P.newQuota(m, day);
-      if (!q.allLearned) m = P.recordNew(m, day, Math.min(m.total, q.gT + (P.diffDays(day, d) % 5 === 0 ? -3 : 1))).m;
+      const q = P.quota(m, day);
+      if (q.finished) break;
+      const w = P.where(m, Math.min(P.TU(m), q.gT + (P.diffDays(day, d) % 5 === 0 ? -2 : 1)));
+      m = P.recordProgress(m, day, w.r, w.p).m;
     }
     return m;
   };
-  const a = sim({ id: newId('m'), createdAt: Date.now(), name: '【サンプル】過去問題集', unit: 'q', total: 300, start: P.addDays(d, -20), target: g.examDate, followGoal: true, goalId: g.id, reps: 5, intervals: P.DEFAULT_INTERVALS, batches: [] }, [9, 4]);
-  const b = sim({ id: newId('m'), createdAt: Date.now() + 1, name: '【サンプル】労働基準法テキスト', unit: 'p', total: 180, start: P.addDays(d, -8), target: P.addDays(d, 50), followGoal: false, goalId: g.id, reps: 4, intervals: P.DEFAULT_INTERVALS, batches: [] }, [1]);
+  const a = sim({ id: newId('m'), createdAt: Date.now(), name: '【サンプル】過去問題集', unit: 'q', total: 300, start: P.addDays(d, -40), target: g.examDate, followGoal: true, goalId: g.id, reps: 3, speed: 0.5, log: {} }, [9, 4]);
+  const b = sim({ id: newId('m'), createdAt: Date.now() + 1, name: '【サンプル】労働基準法テキスト', unit: 'p', total: 180, start: P.addDays(d, -30), target: P.addDays(d, 20), followGoal: false, goalId: g.id, reps: 3, speed: 0.5, log: {} }, [1]);
   saveMat(a); saveMat(b, 'サンプルを入れました。いらなくなったら、目標の画面から削除できます');
 }
 function exportAll() {
-  const data = JSON.stringify({ app: 'RPM', version: 3, exportedAt: new Date().toISOString(), goals: store.goals, materials: store.mats }, null, 1);
+  const data = JSON.stringify({ app: 'RPM', version: 4, exportedAt: new Date().toISOString(), goals: store.goals, materials: store.mats }, null, 1);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
   a.download = `RPM_バックアップ_${P.todayStr()}.json`;
