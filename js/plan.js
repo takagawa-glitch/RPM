@@ -148,20 +148,32 @@ export function migrate(m) {
   return out;
 }
 
-/* ---------- 連続達成 ---------- */
+/* ---------- 連続達成・連続未達成 ---------- */
+/** その日、進行中の教材すべてでノルマを達成したか（true / false）。進行中の教材がなければ null */
+function allMet(mats, day) {
+  const act = mats.filter(m => { const s = dayStatus(m, day); return s !== 'none' && s !== 'done'; });
+  if (!act.length) return null;
+  return act.every(m => dayStatus(m, day) === 'full');
+}
+/** 連続達成の日数。今日がまだ途中なら昨日から数える（今日やれば続く） */
 export function streak(mats, d) {
-  const allMet = day => {
-    const act = mats.filter(m => { const s = dayStatus(m, day); return s !== 'none' && s !== 'done'; });
-    if (!act.length) return null;
-    return act.every(m => dayStatus(m, day) === 'full');
-  };
   let n = 0, day = d;
-  if (allMet(day) !== true) day = addDays(day, -1);
+  if (allMet(mats, day) !== true) day = addDays(day, -1);
   const first = mats.reduce((a, m) => (a && a < m.start ? a : m.start), null);
   for (let i = 0; i < 1500 && first && day >= first; i++, day = addDays(day, -1)) {
-    const r = allMet(day);
+    const r = allMet(mats, day);
     if (r === true) n++;
     else if (r === false) break;
+  }
+  return n;
+}
+/** ノルマに届かなかった日（記録なし・一部だけ）が、昨日まで何日続いているか。今日ノルマを達成していれば 0 */
+export function missStreak(mats, d) {
+  if (allMet(mats, d) === true) return 0;
+  let n = 0, day = addDays(d, -1);
+  for (let i = 0; i < 1500; i++, day = addDays(day, -1)) {
+    if (allMet(mats, day) === false) n++;
+    else break; // 達成した日・開始前の日で止める
   }
   return n;
 }

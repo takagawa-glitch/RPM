@@ -101,6 +101,26 @@ test('連続達成: 途切れた日で止まり、今日が途中なら昨日か
   assert.equal(P.streak([m], '2026-11-08'), 4);
 });
 
+test('連続未達成: 昨日までの未達成の日数。今日達成したら 0、達成した日で止まる', () => {
+  // 11/1〜11/3 は達成、11/4〜11/6 は何もしない
+  const m = simulate(base(), '2026-11-03');
+  assert.equal(P.missStreak([m], '2026-11-07'), 3);
+  assert.equal(P.streak([m], '2026-11-07'), 0);
+  assert.equal(P.missStreak([m], '2026-11-04'), 0); // 昨日（11/3）は達成
+  // 11/7 にその日のノルマを達成すると 0 に戻り、連続達成が 1 になる
+  const q = P.quota(m, '2026-11-07');
+  const w = P.where(m, q.gT);
+  const m2 = P.recordProgress(m, '2026-11-07', w.r, w.p).m;
+  assert.equal(P.missStreak([m2], '2026-11-07'), 0);
+  assert.equal(P.streak([m2], '2026-11-07'), 1);
+  // 一部だけの日も未達成に数える
+  const m3 = P.recordProgress(m, '2026-11-06', 1, P.posBefore(m, '2026-11-06') + 1).m;
+  assert.equal(P.dayStatus(m3, '2026-11-06'), 'part');
+  assert.equal(P.missStreak([m3], '2026-11-07'), 3);
+  // 開始前の日は数えない
+  assert.equal(P.missStreak([base()], '2026-11-03'), 2);
+});
+
 test('前の形（毎日復習）の記録を、1周目の進みとして引き継ぐ', () => {
   const old = { ...base(), log: undefined, intervals: [1, 3], batches: [
     { from: 1, to: 10, done: ['2026-11-01', '2026-11-02'] },

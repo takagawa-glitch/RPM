@@ -1,8 +1,8 @@
 // RPM の画面。計算は plan.js、保存は store.js。
 // 目標（例: 社労士試験・試験日）の中に教材をまとめる。教材の目標日は、試験日と同じにするか、教材ごとに決める。
 // 教材は周回型: p.1 から最後まで回り、2周目、3周目……と後の周ほど速く回る（plan.js）。
-import * as P from './plan.js?v=20261029a';
-import { createStore, cloudAvailable, authMessage } from './store.js?v=20261029a';
+import * as P from './plan.js?v=20261102a';
+import { createStore, cloudAvailable, authMessage } from './store.js?v=20261102a';
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const md = s => { const d = P.toDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
@@ -172,6 +172,14 @@ function recForm(m, d, withDate) {
 }
 
 /* ---------- 画面 ---------- */
+/** 連続達成の日数。できなかった日が続いているときは「-3日」のようにマイナスで赤く出す（ユーザーの指示） */
+function streakHtml(mats, d) {
+  const st = P.streak(mats, d);
+  if (st > 0) return `<span class="streak ok-s">連続達成 <b class="num">${st}</b> 日</span>`;
+  const miss = P.missStreak(mats, d);
+  if (miss > 0) return `<span class="streak miss-s" title="ノルマに届かなかった日が${miss}日続いています">連続達成 <b class="num">-${miss}</b> 日</span>`;
+  return '<span class="streak">連続達成 <b class="num">0</b> 日</span>';
+}
 function header() {
   const acct = !cloudAvailable() ? '設定' : store.mode === 'cloud' ? '同期中' : 'ログイン・同期';
   return `<div class="top">
@@ -188,13 +196,14 @@ function nag(mats, d) {
   const left = act.map(m => ({ m, t: today(m, d) })).filter(x => x.t.left);
   const st = P.streak(mats, d);
   const head = `<div class="summary"><div class="gauge" aria-hidden="true">${act.map((m, i) => `<i class="${i < act.length - left.length ? 'on' : ''}"></i>`).join('')}</div>
-    <div class="txt">今日の分 <b class="num">${act.length - left.length}</b> / ${act.length} 教材 完了</div><div class="txt streak">連続達成 <b class="num">${st}</b> 日</div></div>`;
+    <div class="txt">今日の分 <b class="num">${act.length - left.length}</b> / ${act.length} 教材 完了</div><div class="txt streak-wrap">${streakHtml(mats, d)}</div></div>`;
   if (!left.length) return head + '<div class="nag done">今日の分はすべて終わりました。明日もこの調子で。</div>';
   const h = new Date().getHours();
-  const keep = st > 0 ? `今日やらないと、${st}日続いた連続達成が 0 に戻ります。` : '';
+  const miss = P.missStreak(mats, d);
+  const keep = st > 0 ? `今日やらないと、${st}日続いた連続達成が 0 に戻ります。` : miss >= 2 ? `${miss}日続けてノルマに届いていません。今日で流れを止めましょう。` : miss === 1 ? '昨日はノルマに届きませんでした。今日取り戻しましょう。' : '';
   const late = left.some(x => (P.pace(x.m, d) || 0) < 0) ? '予定より遅れています。今日の分で取り戻しましょう。' : '';
   let lv, msg;
-  if (h < 12) { lv = 1; msg = '今日の分を朝のうちに片付けませんか。'; }
+  if (h < 12) { lv = miss ? 2 : 1; msg = miss ? `${keep}朝のうちに片付けませんか。` : '今日の分を朝のうちに片付けませんか。'; }
   else if (h < 18) { lv = 2; msg = `まだ今日の分が残っています。${late || keep}`; }
   else if (h < 22) { lv = 3; msg = `夜になりました。${keep || late || '今からやりましょう。'}`; }
   else { lv = 4; msg = `今日が終わるまであと${24 - h}時間もありません。${keep}5分だけでも開きましょう。`; }
@@ -213,7 +222,7 @@ function card(m, d) {
     <div class="side">
       ${mosaic(m, d, 'mini')}
       <div class="meta"><span><b class="num">${avgRot(m, d).toFixed(1)}</b> / ${m.reps} 回転</span>${own}</div>
-      <div class="meta"><span>${esc(paceText(m, d))}</span></div>
+      <div class="meta"><span>${esc(paceText(m, d))}</span>${P.missStreak([m], d) >= 2 ? `<span class="miss-s">連続達成 -${P.missStreak([m], d)}日</span>` : ''}</div>
     </div>
     <button class="btn ghost more" data-act="open" data-id="${m.id}">詳しく見る・記録を直す →</button>
   </article>`;
@@ -272,7 +281,7 @@ function goalView() {
     <div class="stat hero"><span class="label">試験まで</span><span class="v num">${n > 0 ? n : n === 0 ? '今日' : '—'}<small>${n > 0 ? '日' : ''}</small></span><span class="s">${ymdw(g.examDate)}</span></div>
     <div class="stat"><span class="label">全体の進み</span><span class="v num">${totalUnits ? Math.round(doneUnits / totalUnits * 100) : 0}<small>%</small></span><span class="s">全教材 × 目標の回数のうち</span></div>
     <div class="stat"><span class="label">今日の残り</span><span class="v num">${leftToday}</span><span class="s">ページ・問の合計</span></div>
-    <div class="stat"><span class="label">教材</span><span class="v num">${mats.length}<small>冊</small></span><span class="s">連続達成 ${P.streak(mats, d)} 日</span></div>
+    <div class="stat"><span class="label">教材</span><span class="v num">${mats.length}<small>冊</small></span><span class="s">${streakHtml(mats, d)}</span></div>
   </div>
   ${mats.length ? `
   <section class="panel">
