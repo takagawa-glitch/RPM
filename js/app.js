@@ -1,8 +1,8 @@
 // RPM の画面。計算は plan.js、保存は store.js。
 // 目標（例: 社労士試験・試験日）の中に教材をまとめる。教材の目標日は、試験日と同じにするか、教材ごとに決める。
 // 教材は周回型: p.1 から最後まで回り、2周目、3周目……と後の周ほど速く回る（plan.js）。
-import * as P from './plan.js?v=20261104b';
-import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104b';
+import * as P from './plan.js?v=20261104c';
+import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104c';
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const md = s => { const d = P.toDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
@@ -70,7 +70,8 @@ function tiles(m, count, mark, from, to, k) {
     const e = Math.min(to, s + k - 1);
     let c = Infinity, mk = '';
     for (let p = s; p <= e; p++) { c = Math.min(c, count[p]); if (mark[p] && mk !== 'today') mk = mark[p]; }
-    const tip = `${m.name} ${range(m, s, e)}：${mk === 'lock' ? 'まだ始まっていない区切り' : `${c}回${mk === 'today' ? '・今日やる' : ''}`}`;
+    const ls = local(m, s), le = local(m, e);
+    const tip = `${m.name} ${ls.sec ? `${ls.sec.name} ${range(m, ls.n, ls.sec === le.sec ? le.n : ls.sec.to - ls.sec.from + 1)}` : range(m, s, e)}：${mk === 'lock' ? 'まだ始まっていない区切り' : `${c}回${mk === 'today' ? '・今日やる' : ''}`}`;
     html += `<i class="${mk}" style="${mk === 'lock' ? '' : tileColor(m, c)}" title="${esc(tip)}"></i>`;
   }
   return html;
@@ -160,7 +161,10 @@ function daysTo(date, d) {
   const n = P.diffDays(d, date);
   return n > 0 ? `あと <b class="num">${n}</b> 日` : n === 0 ? '<b>今日</b>' : '終了';
 }
-const at = (m, u) => { const w = P.where(m, u); const sec = P.sectionAt(m, w.p); return `${w.r}周目 ${sec ? `［${esc(sec.name)}］` : ''}${pos(m, w.p)}`; };
+/** 区切りがあるときは、区切りの中の番号（例: 労基2 の問3）で表す */
+const local = (m, p) => { const sec = P.sectionAt(m, p); return sec ? { sec, n: p - sec.from + 1 } : { sec: null, n: p }; };
+const lpos = (m, p) => { const l = local(m, p); return `${l.sec ? `［${esc(l.sec.name)}］` : ''}${pos(m, l.n)}`; };
+const at = (m, u) => { const w = P.where(m, u); return `${w.r}周目 ${lpos(m, w.p)}`; };
 function quotaBlock(m, d, t) {
   if (t.q.rest) return `<div class="task"><div class="task-h"><span class="label">今日のノルマ</span></div><div class="sub">今日は休みの日です（目標の「曜日ごとの量」で0にしている曜日）。</div>${recForm(m, d, false)}</div>`;
   if (t.q.waiting) return `<div class="task"><div class="task-h"><span class="label">今日のノルマ</span><span class="ok">✓ 開いている分は完了</span></div>
@@ -180,11 +184,14 @@ function recForm(m, d, withDate) {
   const r = P.curRound(m, Math.max(g, q.g0));
   const opts = [...Array(m.reps)].map((_, i) => `<option value="${i + 1}"${i + 1 === r ? ' selected' : ''}>${i + 1}周目</option>`).join('');
   const ph = q.finished ? m.total : P.where(m, q.gT).p;
+  const ss = P.sectionsOf(m);
+  const cur = ss ? local(m, Math.max(1, ph)) : null;
   return `<form class="rec" data-rec="${m.id}">
     ${withDate ? `<input type="date" id="rd-${m.id}" value="${d}" max="${P.todayStr()}" min="${m.start}" aria-label="日付">` : ''}
     <select id="rr-${m.id}" aria-label="周目">${opts}</select>
+    ${ss ? `<select id="rs-${m.id}" aria-label="区切り">${ss.map((sec, i) => `<option value="${i}"${sec === cur.sec ? ' selected' : ''}>${esc(sec.name)}</option>`).join('')}</select>` : ''}
     <span class="lbl">${m.unit === 'q' ? '問' : m.unit === 'k' ? '第' : 'p.'}</span>
-    <input type="number" id="rp-${m.id}" min="0" max="${m.total}" inputmode="numeric" placeholder="${ph}" aria-label="どこまで進んだか">
+    <input type="number" id="rp-${m.id}" min="0" max="${ss ? cur.sec.to - cur.sec.from + 1 : m.total}" inputmode="numeric" placeholder="${ss ? cur.n : ph}" aria-label="どこまで進んだか">
     <span class="lbl">${m.unit === 'k' ? '回' : ''}まで進んだ</span>
     <button class="btn primary" type="submit">記録</button>
   </form>`;
@@ -439,7 +446,7 @@ function detail() {
   const list = P.logList(m).reverse();
   const rows = list.map(([k, e], i) => {
     const prev = i + 1 < list.length ? gOf(list[i + 1][1]) : 0;
-    return `<tr><td>${mdw(k)}</td><td>${e[0]}周目 ${pos(m, e[1])} まで</td><td class="num">+${Math.max(0, gOf(e) - prev)}</td>
+    return `<tr><td>${mdw(k)}</td><td>${e[0]}周目 ${e[1] ? lpos(m, e[1]) : '（はじめ）'} まで</td><td class="num">+${Math.max(0, gOf(e) - prev)}</td>
       <td><button class="btn ghost sm" data-act="undoday" data-id="${m.id}" data-date="${k}">取り消す</button></td></tr>`;
   }).join('');
   const marks = { [m.target]: g && m.followGoal ? '試験日' : '目標日' };
@@ -627,6 +634,8 @@ function account() {
   ${ui.pendingImport ? `<section class="panel" id="importbox"><h2>計画ファイルの読み込み</h2>
     <div class="sub">「${esc(ui.pendingImport.goal.name)}」の計画（教材 ${ui.pendingImport.materials.length} 件・予定 ${(ui.pendingImport.goal.events || []).length} 件）を読み込みます。入れる目標を選んでください。すでにある予定と同じ日・同じ名前のものは入れません。</div>
     <div class="field"><label for="imp-goal">入れる目標</label><select id="imp-goal"><option value="new">新しい目標を作る（${esc(ui.pendingImport.goal.name)}・試験日 ${md(ui.pendingImport.goal.examDate)}）</option>${goalsSorted().map(g => `<option value="${g.id}">${esc(g.name)}（試験日 ${md(g.examDate)}）</option>`).join('')}</select></div>
+    ${(ui.pendingImport.replaceNames || []).length ? `<label class="check"><input type="checkbox" id="imp-replace" checked> 読み込んだあと、入れる目標の中の次の教材を削除する（記録はこのファイルの教材に引き継ぎ済み）: ${ui.pendingImport.replaceNames.map(esc).join('、')}</label>` : ''}
+    <div class="sub">入れる目標に同じ名前の教材があるときは、その教材は入れません（二重に入らないように）。</div>
     <div class="actions"><button class="btn primary" data-act="importgo">読み込む</button><button class="btn" data-act="importcancel">やめる</button></div>
   </section>` : ''}
   <section class="panel"><h2>バックアップ</h2>
@@ -715,7 +724,16 @@ document.addEventListener('submit', e => {
   const day = dateEl ? dateEl.value : P.todayStr();
   if (!day || day > P.todayStr()) return toast('日付は今日までの日を選んでください');
   if (raw === '') return toast('どこまで進んだか、数字を入れてください');
-  const res = P.recordProgress(m, day, r, Number(raw));
+  // 区切りがあるときは、区切りの中の番号を全体の番号に直す
+  const secSel = document.getElementById('rs-' + id);
+  let pnum = Number(raw);
+  if (secSel) {
+    const sec = P.sectionsOf(m)[Number(secSel.value)];
+    const size = sec.to - sec.from + 1;
+    if (!Number.isInteger(pnum) || pnum < 0 || pnum > size) return toast(`「${sec.name}」は 0〜${size} の数字で入れてください`);
+    pnum = sec.from - 1 + pnum;
+  }
+  const res = P.recordProgress(m, day, r, pnum);
   if (res.error) return toast(res.error);
   const t = today(res.m, P.todayStr());
   const g = P.posThrough(res.m, day);
@@ -879,13 +897,21 @@ function applyImport() {
   let g;
   if (sel === 'new') g = { id: newId('g'), createdAt: Date.now(), name: j.goal.name, examDate: j.goal.examDate, dayWeights: j.goal.dayWeights || null, scoreTarget: j.goal.scoreTarget || null, events: [], scores: [] };
   else { g = { ...goalById(sel) }; if (!Array.isArray(g.dayWeights) && j.goal.dayWeights) g.dayWeights = j.goal.dayWeights; if (!g.scoreTarget && j.goal.scoreTarget) g.scoreTarget = j.goal.scoreTarget; }
+  // 置き換える教材（記録は計画ファイルの教材に引き継ぎ済み）を削除し、同じ名前の教材は二重に入れない
+  const replace = new Set(document.getElementById('imp-replace') && document.getElementById('imp-replace').checked ? (j.replaceNames || []) : []);
+  const inGoal = store.mats.filter(m => m.goalId === g.id);
+  const removed = inGoal.filter(m => replace.has(m.name));
+  removed.forEach(m => store.remove('materials', m.id).catch(() => toast('教材を削除できませんでした。あとで手で削除してください。')));
+  const keepNames = new Set(inGoal.filter(m => !replace.has(m.name)).map(m => m.name));
+  const adds = j.materials.filter(m => !keepNames.has(m.name));
   const have = new Set((g.events || []).map(ev => ev.date + '|' + ev.title));
   const evs = (j.goal.events || []).filter(ev => !have.has(ev.date + '|' + ev.title)).map(ev => ({ id: uid(), date: ev.date, title: ev.title, done: false }));
   g.events = [...(g.events || []), ...evs];
   save('goals', g);
-  j.materials.forEach((m, i) => saveMat({ ...m, id: newId('m'), createdAt: Date.now() + i, goalId: g.id, log: {} }));
+  adds.forEach((m, i) => saveMat({ ...m, id: newId('m'), createdAt: Date.now() + i, goalId: g.id, log: m.log || {} }));
   ui.pendingImport = null;
-  toast(`「${g.name}」に教材 ${j.materials.length} 件・予定 ${evs.length} 件を入れました`);
+  const skipped = j.materials.length - adds.length;
+  toast(`「${g.name}」に教材 ${adds.length} 件・予定 ${evs.length} 件を入れました${removed.length ? `（${removed.map(m => m.name).join('・')} は置き換えました）` : ''}${skipped ? `。同じ名前の教材 ${skipped} 件は入れていません` : ''}`);
   go('goal', g.id);
 }
 
