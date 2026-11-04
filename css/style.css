@@ -256,6 +256,10 @@ input[readonly] { color: var(--muted); }
 .sj input { padding: 6px; }
 .sjbox { display: flex; flex-direction: column; gap: 6px; }
 
+/* 版の表示 */
+.foot { text-align: center; color: var(--muted); font-size: 12px; font-family: var(--font-display); padding-top: 8px; }
+.note.newver { border-style: solid; border-color: var(--rev); color: var(--ink); }
+
 /* これからの復習 */
 .up { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px; height: 110px; align-items: end; }
 .up-col { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; height: 100%; gap: 2px; min-width: 0; }

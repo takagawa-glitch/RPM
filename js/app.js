@@ -1,8 +1,8 @@
 // RPM の画面。計算は plan.js、保存は store.js。
 // 目標（例: 社労士試験・試験日）の中に教材をまとめる。教材の目標日は、試験日と同じにするか、教材ごとに決める。
 // 教材は周回型: p.1 から最後まで回り、2周目、3周目……と後の周ほど速く回る（plan.js）。
-import * as P from './plan.js?v=20261104c';
-import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104c';
+import * as P from './plan.js?v=20261104d';
+import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104d';
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const md = s => { const d = P.toDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
@@ -19,8 +19,12 @@ const SEN = ['労基・安衛', '労災', '雇用', '労一', '社一', '健保'
 const KINDS = { taku: { label: '択一式（模試・本試験）', max: 70, subj: TAKU, per: 10, cut: 4 }, sen: { label: '選択式（模試・本試験）', max: 40, subj: SEN, per: 5, cut: 3 }, ans: { label: '答練・小テスト', max: '', subj: null } };
 const WEIGHT_OPTS = [0, 0.5, 1, 1.5, 2, 2.5, 3];
 const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+// 版: index.html で読み込むときの ?v= の値（例: 20261104d → 2026.11.04d）。更新のたびに変える（CLAUDE.md の「更新するとき」）
+const VER_RAW = new URL(import.meta.url).searchParams.get('v') || '';
+const verText = v => (/^\d{8}/.test(v) ? `${v.slice(0, 4)}.${v.slice(4, 6)}.${v.slice(6, 8)}${v.slice(8)}` : (v || '開発中'));
+const VERSION = verText(VER_RAW);
 
-const ui = { view: 'home', id: null, confirmDel: false, formErr: '', acctMsg: '', acctErr: '', busy: false, presetGoal: null, scorePrefill: null, pendingImport: null };
+const ui = { newVer: '', view: 'home', id: null, confirmDel: false, formErr: '', acctMsg: '', acctErr: '', busy: false, presetGoal: null, scorePrefill: null, pendingImport: null };
 // 記録が届いたら描き直す（入力中の登録画面は消さない）
 const store = createStore(() => { if (ui.view !== 'form' && ui.view !== 'goalform') render(); });
 
@@ -302,7 +306,17 @@ function header() {
       <div class="today">今日<strong>${mdw(P.todayStr())}</strong></div>
       <button class="btn sm${store.mode === 'cloud' ? ' synced' : ''}" data-act="account">${acct}</button>
     </div>
-  </div>${store.error ? `<div class="note err">${esc(store.error)}</div>` : ''}`;
+  </div>${store.error ? `<div class="note err">${esc(store.error)}</div>` : ''}${ui.newVer ? `<div class="note newver">新しい版（${esc(verText(ui.newVer))}）が公開されています。今は ${esc(VERSION)} です。<div class="actions"><button class="btn primary sm" data-act="reload">新しい版に切り替える</button></div></div>` : ''}`;
+}
+/** 公開されている最新の版を調べる（index.html の ?v= を読む）。違えば上に知らせる */
+async function checkNewVersion() {
+  if (!VER_RAW) return;
+  try {
+    const html = await (await fetch('index.html', { cache: 'no-store' })).text();
+    const m = html.match(/js\/app\.js\?v=([\w.-]+)/);
+    const latest = m ? m[1] : '';
+    if (latest && latest !== VER_RAW && latest !== ui.newVer) { ui.newVer = latest; render(); }
+  } catch (e) { /* 通信できないときは何もしない */ }
 }
 function nag(mats, d) {
   const act = mats.filter(m => { const t = today(m, d); return !t.finished && !t.q.beforeStart && !t.q.rest && !t.q.waiting; });
@@ -628,6 +642,11 @@ function account() {
   <section class="panel"><h2>ログイン・同期</h2>${body}
     ${ui.acctErr ? `<div class="err-text">${esc(ui.acctErr)}</div>` : ''}${ui.acctMsg ? `<div class="ok">${esc(ui.acctMsg)}</div>` : ''}
   </section>
+  <section class="panel"><h2>このアプリの版</h2>
+    <div class="meta"><span>今の版 <b class="num">${esc(VERSION)}</b></span></div>
+    <div class="sub">更新したのに画面が変わらないときは、このボタンで読み込み直してください（PC は Ctrl+F5 でも同じです）。</div>
+    <div class="actions"><button class="btn sm" data-act="reload">最新の版を読み込み直す</button></div>
+  </section>
   <section class="panel"><h2>画面の明るさ</h2>
     <div class="seg theme">${opt('light', '明るい', 'おすすめ。文字が読みやすい')}${opt('dark', '暗い', '夜・暗い部屋で')}${opt('auto', '端末に合わせる', '')}</div>
   </section>
@@ -649,7 +668,7 @@ function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
   const views = { detail, form, goal: goalView, goalform: goalForm, account };
-  app.innerHTML = (views[ui.view] || home)();
+  app.innerHTML = (views[ui.view] || home)() + `<footer class="foot">RPM 版 ${esc(VERSION)}</footer>`;
   if (ui.view === 'form') updatePreview();
   window.scrollTo(0, y);
 }
@@ -705,6 +724,7 @@ document.addEventListener('click', e => {
       .catch(err => { ui.acctErr = authMessage(err); render(); });
   }
   else if (act === 'export') exportAll();
+  else if (act === 'reload') { const u = new URL(location.href); u.searchParams.set('r', Date.now()); location.replace(u.toString()); }
 });
 
 document.addEventListener('submit', e => {
@@ -919,6 +939,7 @@ function applyImport() {
 let shownDay = P.todayStr();
 function checkDay() { if (P.todayStr() !== shownDay) { shownDay = P.todayStr(); render(); } }
 setInterval(checkDay, 60000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDay(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkDay(); checkNewVersion(); } });
+setTimeout(checkNewVersion, 3000);
 
 store.init();
