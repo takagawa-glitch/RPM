@@ -41,7 +41,7 @@ claude.ai のログインは使わない（ユーザーの指示）。
 - 保存先: ログインなし → localStorage `rpm-v2-materials`・`rpm-v2-goals`。ログイン → Firestore `users/<uid>/materials/<id>`・`users/<uid>/goals/<id>`（オフライン用の控えあり）。
 - 目標を削除しても教材は消さず「目標なし」へ移す（試験日に合わせていた教材は、試験日を自分の目標日として残す）。
 - バックアップ: `{ app:'RPM', version:4, exportedAt, goals[], materials[] }` の JSON（前の版も読める。前の形の教材は読み込んだあと読み替える）。
-- 計画ファイル: `{ app:'RPM', kind:'plan', goal:{ name, examDate, dayWeights, scoreTarget, events[{date,title}] }, materials[] }`。読み込むときに入れる目標を選ぶ（app.js の `applyImport`）。教材は `log` を持てる。`replaceNames` に書いた名前の教材は、チェックがあれば削除して置き換える。入れる目標に同じ名前の教材があれば入れない。`計画ファイル/山川2027_計画.json` は時期4つ（基礎・2周目と弱点つぶし・実戦・直前）も持つ。読み込み先の目標に時期がなければ入れる。山川の受講モデルスケジュール（11/7開始）と、ユーザーから聞いた OUTPUT の問題数で作った。OUTPUT は労基法アウトプット1・2（109+110問）を先頭の区切りにまとめ、その記録を通しの位置に読み替えて `log` に入れた（計1631問）。
+- 計画ファイル: `{ app:'RPM', kind:'plan', goal:{ name, examDate, dayWeights, scoreTarget, events[{date,title}] }, materials[] }`。読み込むときに入れる目標を選ぶ（app.js の `applyImport`）。教材は `log` を持てる。`replaceNames` に書いた名前の教材は、チェックがあれば削除して置き換える。`removeEventTitles` に書いた名前の予定は、済みでなければ削除する（日付を変えた予定の置き換え用）。入れる目標に同じ名前の教材があれば入れない。`計画ファイル/山川2027_計画.json` は時期4つ（基礎・2周目と弱点つぶし・実戦・直前）も持つ。予定は公式の配信スケジュール（yamakawa-sr.net/schedule/）の講座も入れた: 過去問10年網羅のダウンロード（目安の日）、ひっかけ300選（その科目の山川答練の翌週の日曜）、だき合せ（配信日の翌週の日曜）、Monthly、直前講座の WEB 配信日（ユーザーは WEB で見る）、模試の解説。読み込み先の目標に時期がなければ入れる。山川の受講モデルスケジュール（11/7開始）と、ユーザーから聞いた OUTPUT の問題数で作った。OUTPUT は労基法アウトプット1・2（109+110問）を先頭の区切りにまとめ、その記録を通しの位置に読み替えて `log` に入れた（計1631問）。
 - 区切りのある教材の画面表示と記録の入力は、区切りの中の番号（app.js の `local`・`lpos`）。保存は通しの番号。
 - 画面の明るさ: localStorage `rpm-theme`（light〔標準〕/ dark / auto）。index.html の先頭で data-theme を付ける。
 - 色の根拠は css/style.css の先頭のコメント。赤は削除・エラーと「連続達成 -○日」（ユーザーの指示）だけに使い、遅れはオレンジ（--late）。

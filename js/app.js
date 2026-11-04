@@ -1,8 +1,8 @@
 // RPM の画面。計算は plan.js、保存は store.js。
 // 目標（例: 社労士試験・試験日）の中に教材をまとめる。教材の目標日は、試験日と同じにするか、教材ごとに決める。
 // 教材は周回型: p.1 から最後まで回り、2周目、3周目……と後の周ほど速く回る（plan.js）。
-import * as P from './plan.js?v=20261104e';
-import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104e';
+import * as P from './plan.js?v=20261104f';
+import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104f';
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const md = s => { const d = P.toDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
@@ -19,7 +19,7 @@ const SEN = ['労基・安衛', '労災', '雇用', '労一', '社一', '健保'
 const KINDS = { taku: { label: '択一式（模試・本試験）', max: 70, subj: TAKU, per: 10, cut: 4 }, sen: { label: '選択式（模試・本試験）', max: 40, subj: SEN, per: 5, cut: 3 }, ans: { label: '答練・小テスト', max: '', subj: null } };
 const WEIGHT_OPTS = [0, 0.5, 1, 1.5, 2, 2.5, 3];
 const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-// 版: index.html で読み込むときの ?v= の値（例: 20261104e → 2026.11.04d）。更新のたびに変える（CLAUDE.md の「更新するとき」）
+// 版: index.html で読み込むときの ?v= の値（例: 20261104f → 2026.11.04d）。更新のたびに変える（CLAUDE.md の「更新するとき」）
 const VER_RAW = new URL(import.meta.url).searchParams.get('v') || '';
 const verText = v => (/^\d{8}/.test(v) ? `${v.slice(0, 4)}.${v.slice(4, 6)}.${v.slice(6, 8)}${v.slice(8)}` : (v || '開発中'));
 const VERSION = verText(VER_RAW);
@@ -444,7 +444,7 @@ function timeline(g, mats, d) {
   // 予定
   const evRows = eventRows(g).map(([k, list]) => row(k, list.map(ev => {
     const short = ev.title.startsWith(k) ? ev.title.slice(k.length).trim() : ev.title.replace(/（.*$/, '');
-    const lab = k === '講座・模試など' || list.length < 3 ? short.replace(/（.*$/, '').replace(/(完全)?マスター|対策|講座|アドバンス|公開/g, '') || short : ''; // 短い名前（例: 改正法・白書・模試）
+    const lab = k === '講座・模試など' || list.length < 3 ? (short.replace(/（.*$/, '').replace(/(完全)?マスター|対策|講座|アドバンス|公開/g, '').trim().split(/\s/)[0] || short) : ''; // 短い名前（例: 改正法・白書・模試）
     return `<i class="tl-ev${ev.done ? ' done' : ''}${!ev.done && ev.date < d ? ' late' : ''}" style="left:${x(ev.date)}%" title="${esc(`${mdw(ev.date)} ${ev.title}${ev.done ? '（済み）' : ''}`)}"></i>${lab ? `<span class="tl-evl" style="left:${x(ev.date)}%">${esc(lab)}</span>` : ''}`;
   }).join(''), 'tl-evrow')).join('');
   return `<div class="tl-scroll"><div class="tl" role="img" aria-label="全体スケジュール">${head}${ph}${matRows}${evRows}</div></div>
@@ -1007,6 +1007,10 @@ function applyImport() {
   removed.forEach(m => store.remove('materials', m.id).catch(() => toast('教材を削除できませんでした。あとで手で削除してください。')));
   const keepNames = new Set(inGoal.filter(m => !replace.has(m.name)).map(m => m.name));
   const adds = j.materials.filter(m => !keepNames.has(m.name));
+  // 計画ファイルで置き換えると書かれた古い予定（まだ済みにしていないもの）を消す
+  const dropEv = new Set(j.removeEventTitles || []);
+  const dropped = (g.events || []).filter(ev => dropEv.has(ev.title) && !ev.done).length;
+  g.events = (g.events || []).filter(ev => !(dropEv.has(ev.title) && !ev.done));
   const have = new Set((g.events || []).map(ev => ev.date + '|' + ev.title));
   const evs = (j.goal.events || []).filter(ev => !have.has(ev.date + '|' + ev.title)).map(ev => ({ id: uid(), date: ev.date, title: ev.title, done: false }));
   g.events = [...(g.events || []), ...evs];
@@ -1014,7 +1018,7 @@ function applyImport() {
   adds.forEach((m, i) => saveMat({ ...m, id: newId('m'), createdAt: Date.now() + i, goalId: g.id, log: m.log || {} }));
   ui.pendingImport = null;
   const skipped = j.materials.length - adds.length;
-  toast(`「${g.name}」に教材 ${adds.length} 件・予定 ${evs.length} 件を入れました${removed.length ? `（${removed.map(m => m.name).join('・')} は置き換えました）` : ''}${skipped ? `。同じ名前の教材 ${skipped} 件は入れていません` : ''}`);
+  toast(`「${g.name}」に教材 ${adds.length} 件・予定 ${evs.length} 件を入れました${removed.length ? `（${removed.map(m => m.name).join('・')} は置き換えました）` : ''}${dropped ? `。古い予定 ${dropped} 件を置き換えました` : ''}${skipped ? `。同じ名前の教材 ${skipped} 件は入れていません` : ''}`);
   go('goal', g.id);
 }
 
