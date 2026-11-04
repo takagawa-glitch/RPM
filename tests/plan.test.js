@@ -133,6 +133,61 @@ test('前の形（毎日復習）の記録を、1周目の進みとして引き�
   assert.equal(P.migrate(m), m); // 2回目は何もしない
 });
 
+test('区切り: 開始日が来ていない区切りのページは、ノルマに入らない', () => {
+  const sections = P.buildSections([
+    { name: '安衛', count: 96, start: '2026-11-28' },
+    { name: '労災', count: 166, start: '2026-12-05' }
+  ]);
+  const m = base({ total: 262, sections, start: '2026-11-28', target: '2027-08-22' });
+  assert.deepEqual(sections.map(x => [x.from, x.to]), [[1, 96], [97, 262]]);
+  assert.equal(P.availableAt(m, '2026-11-28'), 96);
+  assert.equal(P.availableAt(m, '2026-12-05'), 262);
+  // 安衛だけの週は、次の区切りが始まる前日（12/4）までに96問を終える量（7日で割る）
+  assert.equal(P.quota(m, '2026-11-28').units, Math.ceil(96 / 7));
+  // 安衛を全部終えたら、労災が始まるまでは待ち（ノルマ0・その日は数えない）
+  const done = P.recordProgress(m, '2026-11-30', 1, 96).m;
+  const q = P.quota(done, '2026-12-01');
+  assert.equal(q.units, 0);
+  assert.equal(q.waiting, true);
+  assert.equal(q.next.name, '労災');
+  assert.equal(P.dayStatus(done, '2026-12-01'), 'none');
+  // 開いていないページはモザイクで鍵の印
+  assert.equal(P.pageStates(done, '2026-12-01').mark[200], 'lock');
+  // 労災が始まると、また出る
+  assert.ok(P.quota(done, '2026-12-05').units > 0);
+});
+
+test('区切り: 最後の区切りが始まったあとは、残りを目標日までの日数で割る', () => {
+  const sections = P.buildSections([{ name: 'A', count: 50, start: '2026-11-01' }, { name: 'B', count: 50, start: '2026-11-11' }]);
+  const m = base({ total: 100, reps: 1, sections, target: '2026-11-30' });
+  const done = P.recordProgress(m, '2026-11-10', 1, 50).m;
+  assert.equal(P.quota(done, '2026-11-11').units, Math.ceil(50 / 20));
+});
+
+test('曜日ごとの量: 休みの日はノルマ0、比率2の日は1の日の倍', () => {
+  // 日曜を休み、土曜を2、平日を1
+  const m = base({ speed: 1, reps: 1, total: 70, start: '2026-11-02', target: '2026-11-08', dayWeights: [0, 1, 1, 1, 1, 1, 2] }); // 11/2 は月曜
+  assert.equal(P.weightSum(m, '2026-11-02', '2026-11-08'), 7);
+  assert.equal(P.quota(m, '2026-11-02').units, 10); // 70 × 1/7
+  const sat = P.quota(base({ ...m, start: '2026-11-07' }), '2026-11-07'); // 土・日の2日で70 → 土曜は 2/2
+  assert.equal(sat.units, 70);
+  const sun = P.quota(m, '2026-11-08');
+  assert.equal(sun.units, 0);
+  assert.equal(sun.rest, true);
+  assert.equal(P.dayStatus(m, '2026-11-08'), 'none');
+  // 比率なしなら毎日同じ
+  assert.equal(P.weightSum(base(), '2026-11-02', '2026-11-08'), 7);
+});
+
+test('入力チェック: 区切り', () => {
+  const ok = { name: 'a', total: 30, start: '2026-11-01', target: '2026-12-01', reps: 3, speed: 0.5,
+    sections: P.buildSections([{ name: 'A', count: 10, start: '2026-11-01' }, { name: 'B', count: 20, start: '2026-11-08' }]) };
+  assert.equal(P.validateMaterial(ok), '');
+  assert.ok(P.validateMaterial({ ...ok, total: 31 }));
+  assert.ok(P.validateMaterial({ ...ok, sections: P.buildSections([{ name: 'A', count: 10, start: '2026-11-08' }, { name: 'B', count: 20, start: '2026-11-01' }]) }));
+  assert.ok(P.validateMaterial({ ...ok, sections: P.buildSections([{ name: '', count: 10, start: '2026-11-01' }, { name: 'B', count: 20, start: '2026-11-08' }]) }));
+});
+
 test('入力チェック', () => {
   const ok = { name: 'a', total: 10, start: '2026-11-01', target: '2026-12-01', reps: 3, speed: 0.5 };
   assert.equal(P.validateMaterial(ok), '');

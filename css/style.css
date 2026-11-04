@@ -205,6 +205,57 @@ h2 { font-size: 16px; margin: 0; font-weight: 700; text-wrap: balance; }
 .rp-list li.rp-now span { color: var(--hot); font-weight: 700; }
 .rp-list li.rp-plan { color: var(--muted); }
 
+/* 区切り（まだ始まっていない区切りは斜線） */
+.mosaic i.lock, .legend i.lock { background: repeating-linear-gradient(135deg, var(--tile-0) 0 3px, transparent 3px 6px); box-shadow: inset 0 0 0 1px var(--line); }
+.secm { display: flex; flex-direction: column; gap: 8px; }
+.gm-name small { color: var(--muted); font-size: 11px; }
+#secrows { display: flex; flex-direction: column; gap: 6px; }
+.sec-row { display: grid; grid-template-columns: minmax(0, 1fr) 6em 11em auto; gap: 6px; align-items: center; }
+.sec-row input { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 7px 8px; width: 100%; }
+input[readonly] { color: var(--muted); }
+
+/* 曜日ごとの量 */
+.wds { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.wd { display: flex; flex-direction: column; align-items: center; gap: 2px; font-weight: 500 !important; }
+.wd select { padding: 6px 2px; text-align: center; }
+
+/* 予定 */
+.evs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ev { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 8px; border-radius: 8px; }
+.ev .check { flex: 1; min-width: 0; }
+.ev-d { min-width: 8.5em; color: var(--muted); font-size: 13px; }
+.ev.now { background: color-mix(in oklch, var(--hot) 12%, var(--surface)); }
+.ev.done .ev-t { color: var(--muted); text-decoration: line-through; }
+.ev-tools { display: flex; gap: 2px; }
+.weekev { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
+.grow { flex: 1; min-width: 10em; }
+.evall summary { cursor: pointer; color: var(--rev); font-size: 14px; font-weight: 500; padding: 4px 0; }
+
+/* 点数の記録 */
+.sc-wrap { overflow-x: auto; }
+.sc { width: 100%; min-width: 420px; height: auto; display: block; }
+.sc-grid { stroke: var(--line); stroke-width: 1; }
+.sc-ax { fill: var(--muted); font-size: 11px; font-family: var(--font-display); }
+.sc-tgt { stroke: var(--good); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.sc-tgtt { fill: var(--good); font-size: 11px; font-weight: 700; }
+.sc-l { fill: none; stroke-width: 2; }
+.sc-l.taku, .sc-p.taku, .sc-k.taku { stroke: var(--rev); fill: var(--rev); }
+.sc-l.sen, .sc-p.sen, .sc-k.sen { stroke: var(--hot); fill: var(--hot); }
+.sc-l.ans, .sc-p.ans, .sc-k.ans { stroke: var(--muted); fill: var(--muted); }
+.sc-l { fill: none !important; }
+.sc-p { stroke: var(--surface); stroke-width: 1.5; }
+.legend i.sc-k { border-radius: 99px; background: currentColor; }
+.legend i.sc-k.taku { background: var(--rev); } .legend i.sc-k.sen { background: var(--hot); } .legend i.sc-k.ans { background: var(--muted); }
+.legend i.sc-k.tgt { background: transparent; border-top: 2px dashed var(--good); border-radius: 0; height: 0; }
+.cutbox { display: flex; flex-direction: column; gap: 8px; }
+.cmp-bar.cut::after { content: ""; position: absolute; top: -2px; bottom: -2px; left: var(--cut); width: 2px; background: var(--ink); opacity: .55; }
+.cmp-bar.cut { overflow: visible; }
+.cmp-bar i.r.bad { background: var(--bad); }
+.sjs { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5em, 1fr)); gap: 6px; }
+.sj { display: grid; grid-template-columns: minmax(0, 1fr) 3.6em auto; align-items: center; gap: 4px; font-size: 13px; font-weight: 500 !important; }
+.sj input { padding: 6px; }
+.sjbox { display: flex; flex-direction: column; gap: 6px; }
+
 /* これからの復習 */
 .up { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px; height: 110px; align-items: end; }
 .up-col { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; height: 100%; gap: 2px; min-width: 0; }
@@ -258,6 +309,10 @@ h2 { font-size: 16px; margin: 0; font-weight: 700; text-wrap: balance; }
   .cmp-name { grid-column: 1 / -1; }
   .gm-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .seg.theme { flex-direction: column; }
+  .sec-row { grid-template-columns: minmax(0, 1fr) 5em; }
+  .sec-row .sr-start { grid-column: 1; }
+  .wds { gap: 3px; }
+  .wd select { font-size: 13px; }
   .brand b { font-size: 28px; }
   .brand span { display: none; }
 }

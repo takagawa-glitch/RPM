@@ -22,19 +22,25 @@ claude.ai のログインは使わない（ユーザーの指示）。
 ├─ tests/plan.test.js    計算のテスト（node:test）
 ├─ tools/make_icons.py
 ├─ docs/iPhoneアプリ化.md
+├─ リリースノート/        職員に影響する変更の記録（YYYY-MM-DD.md）
+├─ 計画ファイル/          講座ごとの計画ファイル（読み込み用 JSON。Git 対象外）
 └─ 旧版/                 claude.ai 版（Git 対象外・参照のみ）
 ```
 ライブラリ: なし。Firebase SDK 10.12.2 は gstatic から、同期を使うときだけ読み込む。フォントは Google Fonts。
 
 ## データ
-目標1件 = `{ id, name, examDate(YYYY-MM-DD), createdAt, updatedAt }`。
+目標1件 = `{ id, name, examDate(YYYY-MM-DD), dayWeights[日..土]|null, scoreTarget|null, events[], scores[], createdAt, updatedAt }`。
+- `events` = `{ id, date, title, done }`。`scores` = `{ id, date, title, kind('taku'|'sen'|'ans'), score, max, subjects{科目名: 点} }`。科目と足切りの目安は app.js の `KINDS`（択一 各10点・4点未満、選択 各5点・3点未満）。
+- `dayWeights` は目標の教材の計算に渡す（app.js の `resolve`）。
 教材1件 = 1オブジェクト（`goalId` と `followGoal` を持つ。followGoal が true なら、計算の前に target を目標の examDate に置き換える＝app.js の `resolve`）:
-`{ id, goalId, followGoal, name, unit('p'|'q'), total, start, target(YYYY-MM-DD), reps, speed, createdAt, updatedAt, log }`
+`{ id, goalId, followGoal, name, unit('p'|'q'|'k'＝回), total, start, target(YYYY-MM-DD), reps, speed, sections|null, createdAt, updatedAt, log }`
+- `sections` = `[{ name, from, to, start }]`（科目ごとの区切り。from の順・開始日も同じ順か後）。
 - `log` = `{ 'YYYY-MM-DD': [周目, ページ] }`。その日の終わりにどこまで進んだか。
 - 2026-10-29 に「毎日復習（忘却曲線）」から「周回型」に変更。前の形の `batches`（と `intervals`）は `P.migrate` で1周目の進みとして読み替え、次に保存したときに新しい形になる。
 - 保存先: ログインなし → localStorage `rpm-v2-materials`・`rpm-v2-goals`。ログイン → Firestore `users/<uid>/materials/<id>`・`users/<uid>/goals/<id>`（オフライン用の控えあり）。
 - 目標を削除しても教材は消さず「目標なし」へ移す（試験日に合わせていた教材は、試験日を自分の目標日として残す）。
 - バックアップ: `{ app:'RPM', version:4, exportedAt, goals[], materials[] }` の JSON（前の版も読める。前の形の教材は読み込んだあと読み替える）。
+- 計画ファイル: `{ app:'RPM', kind:'plan', goal:{ name, examDate, dayWeights, scoreTarget, events[{date,title}] }, materials[] }`。読み込むときに入れる目標を選ぶ（app.js の `applyImport`）。`計画ファイル/山川2027_計画.json` は山川の受講モデルスケジュール（11/7開始）と、ユーザーから聞いた OUTPUT の問題数（労基以外 1412問）で作った。
 - 画面の明るさ: localStorage `rpm-theme`（light〔標準〕/ dark / auto）。index.html の先頭で data-theme を付ける。
 - 色の根拠は css/style.css の先頭のコメント。赤は削除・エラーと「連続達成 -○日」（ユーザーの指示）だけに使い、遅れはオレンジ（--late）。
 
@@ -43,7 +49,9 @@ claude.ai のログインは使わない（ユーザーの指示）。
 - n周目の1ページの負担 = speed^(n-1)（下限0.1。speed は 0.5〔標準〕/0.7/1）。後の周ほど短い日数で回る。
 - 今日のノルマ = 昨日までに残った負担 ÷ 今日を含む目標日までの残り日数 を、ページ数に戻したもの（`quota`）。毎日組み直す（リスケ）。目標日を過ぎたら残り全部。
 - `roundPlan`: 周ごとの終わった日／いまのペースでの終わる予定日。`pace`: 最初の計画（負担を毎日均等）との差。
-- `dayStatus`: その日のノルマを達成したら 'full'。`streak` は全教材が 'full' の日の連続数（今日が途中なら昨日から）。`missStreak` は昨日までノルマに届かなかった日（記録なし・一部）の連続数で、画面では「連続達成 -○日」と赤で出す（今日達成したら 0）。
+- 区切り: 1周目は `availableAt`（開始日が来た区切りの最後）まで。開いている分は次の区切りが始まる前日までに終える量と、全体を均等に割った量の多いほう。開いている分を終えたら `waiting`（ノルマ0）。
+- 曜日ごとの量: 残りの負担 × 今日の比率 ÷ 目標日までの比率の合計（`weightSum`）。比率0の日は `rest`（ノルマ0）。
+- `dayStatus`: ノルマ0の日（開始前・休み・区切り待ち）は 'none'（連続達成を途切れさせない）。その日のノルマを達成したら 'full'。`streak` は全教材が 'full' の日の連続数（今日が途中なら昨日から）。`missStreak` は昨日までノルマに届かなかった日（記録なし・一部）の連続数で、画面では「連続達成 -○日」と赤で出す（今日達成したら 0）。
 
 ## 処理記録・起動エラー
 共通ルールの処理記録・error.log は、顧問先データを扱う Windows の業務ツール向けのため対象外。エラーは画面のメッセージで知らせる。

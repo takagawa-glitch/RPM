@@ -1,20 +1,26 @@
 // RPM の画面。計算は plan.js、保存は store.js。
 // 目標（例: 社労士試験・試験日）の中に教材をまとめる。教材の目標日は、試験日と同じにするか、教材ごとに決める。
 // 教材は周回型: p.1 から最後まで回り、2周目、3周目……と後の周ほど速く回る（plan.js）。
-import * as P from './plan.js?v=20261102a';
-import { createStore, cloudAvailable, authMessage } from './store.js?v=20261102a';
+import * as P from './plan.js?v=20261104a';
+import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104a';
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const md = s => { const d = P.toDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
 const mdw = s => { const d = P.toDate(s); return `${d.getMonth() + 1}月${d.getDate()}日（${WD[d.getDay()]}）`; };
 const ymdw = s => { const d = P.toDate(s); return `${d.getFullYear()}年${mdw(s)}`; };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const uw = m => (m.unit === 'q' ? '問' : 'ページ');
-const pos = (m, p) => (m.unit === 'q' ? `問${p}` : `p.${p}`);
-const range = (m, a, b) => (a === b ? pos(m, a) : `${pos(m, a)}〜${b}`);
+const uw = m => (m.unit === 'q' ? '問' : m.unit === 'k' ? '回' : 'ページ');
+const pos = (m, p) => (m.unit === 'q' ? `問${p}` : m.unit === 'k' ? `第${p}回` : `p.${p}`);
+const range = (m, a, b) => (a === b ? pos(m, a) : m.unit === 'k' ? `第${a}〜${b}回` : `${pos(m, a)}〜${b}`);
+const uid = () => Math.random().toString(36).slice(2, 10);
+// 本試験の科目（点数の記録で使う）。足切りの目安は 択一=各科目4点未満、選択=各科目3点未満（年によって補正あり）
+const TAKU = ['労基・安衛', '労災・徴収', '雇用・徴収', '一般常識', '健保', '厚年', '国年'];
+const SEN = ['労基・安衛', '労災', '雇用', '労一', '社一', '健保', '厚年', '国年'];
+const KINDS = { taku: { label: '択一式（模試・本試験）', max: 70, subj: TAKU, per: 10, cut: 4 }, sen: { label: '選択式（模試・本試験）', max: 40, subj: SEN, per: 5, cut: 3 }, ans: { label: '答練・小テスト', max: '', subj: null } };
+const WEIGHT_OPTS = [0, 0.5, 1, 1.5, 2, 2.5, 3];
 const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-const ui = { view: 'home', id: null, confirmDel: false, formErr: '', acctMsg: '', acctErr: '', busy: false, presetGoal: null };
+const ui = { view: 'home', id: null, confirmDel: false, formErr: '', acctMsg: '', acctErr: '', busy: false, presetGoal: null, scorePrefill: null, pendingImport: null };
 // 記録が届いたら描き直す（入力中の登録画面は消さない）
 const store = createStore(() => { if (ui.view !== 'form' && ui.view !== 'goalform') render(); });
 
@@ -23,7 +29,8 @@ const goalById = id => store.goals.find(g => g.id === id) || null;
 const goalOf = m => (m.goalId ? goalById(m.goalId) : null);
 /** 試験日に合わせる教材は、目標日を試験日に置き換えて計算する */
 // 前の形（毎日復習）の記録は、1周目の進みとして読み替える（次に保存したときに新しい形で保存される）
-const resolve = m0 => { const m = P.migrate(m0); const g = goalOf(m); return g && m.followGoal ? { ...m, target: g.examDate } : m; };
+// 目標の「曜日ごとの量」も教材の計算に渡す
+const resolve = m0 => { const m = P.migrate(m0); const g = goalOf(m); if (!g) return m; return { ...m, target: m.followGoal ? g.examDate : m.target, dayWeights: g.dayWeights || null }; };
 const allMats = () => store.mats.map(resolve).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 const byId = id => { const m = store.mats.find(x => x.id === id); return m ? resolve(m) : null; };
 const goalsSorted = () => store.goals.slice().sort((a, b) => (a.examDate < b.examDate ? -1 : a.examDate > b.examDate ? 1 : (a.createdAt || 0) - (b.createdAt || 0)));
@@ -57,33 +64,40 @@ function tileColor(m, c) {
   const pct = m.reps === 1 ? 100 : Math.round(28 + 72 * (c - 1) / (m.reps - 1));
   return `background:color-mix(in oklch, var(--rev) ${pct}%, var(--rev-lo))`;
 }
+function tiles(m, count, mark, from, to, k) {
+  let html = '';
+  for (let s = from; s <= to; s += k) {
+    const e = Math.min(to, s + k - 1);
+    let c = Infinity, mk = '';
+    for (let p = s; p <= e; p++) { c = Math.min(c, count[p]); if (mark[p] && mk !== 'today') mk = mark[p]; }
+    const tip = `${m.name} ${range(m, s, e)}：${mk === 'lock' ? 'まだ始まっていない区切り' : `${c}回${mk === 'today' ? '・今日やる' : ''}`}`;
+    html += `<i class="${mk}" style="${mk === 'lock' ? '' : tileColor(m, c)}" title="${esc(tip)}"></i>`;
+  }
+  return html;
+}
 function mosaic(m, d, size) {
   const { count, mark } = P.pageStates(m, d);
   const k = Math.ceil(m.total / (size === 'mini' ? 240 : 600)); // 多いときは数ページを1タイルにまとめる
-  let html = '';
-  for (let s = 1; s <= m.total; s += k) {
-    const e = Math.min(m.total, s + k - 1);
-    let c = Infinity, mk = '';
-    for (let p = s; p <= e; p++) { c = Math.min(c, count[p]); if (mark[p]) mk = mark[p]; }
-    const tip = `${m.name} ${range(m, s, e)}：${c}回${mk === 'today' ? '・今日やる' : ''}`;
-    html += `<i class="${mk}" style="${tileColor(m, c)}" title="${esc(tip)}"></i>`;
+  const ss = P.sectionsOf(m);
+  if (ss && !size) {
+    return `<div class="secm">${ss.map(sec => `<div class="gm-row"><span class="gm-name">${esc(sec.name)} <small>${md(sec.start)}〜</small></span><div class="mosaic">${tiles(m, count, mark, sec.from, Math.min(sec.to, m.total), k)}</div></div>`).join('')}</div>`;
   }
-  return `<div class="mosaic ${size || ''}" role="img" aria-label="${esc(m.name)}の回転モザイク">${html}</div>`;
+  return `<div class="mosaic ${size || ''}" role="img" aria-label="${esc(m.name)}の回転モザイク">${tiles(m, count, mark, 1, m.total, k)}</div>`;
 }
 function mosaicLegend(reps) {
   const m = { reps };
   const steps = reps <= 6 ? [...Array(reps)].map((_, i) => i + 1) : [1, Math.ceil(reps / 2), reps];
   return `<div class="legend"><span><i></i>まだ</span>${steps.map(c => `<span><i style="${tileColor(m, c)}"></i>${c}回</span>`).join('')}
-    <span><i class="today"></i>今日やる</span></div>`;
+    <span><i class="today"></i>今日やる</span><span><i class="lock"></i>まだ始まっていない区切り</span></div>`;
 }
 const legendRel = `<div class="legend"><span><i></i>まだ</span><span><i style="background:color-mix(in oklch, var(--rev) 28%, var(--rev-lo))"></i>1回</span><span><i style="background:color-mix(in oklch, var(--rev) 64%, var(--rev-lo))"></i>半分</span><span><i style="background:var(--rev)"></i>目標の回数</span>
-  <span><i class="today"></i>今日やる</span></div>`;
+  <span><i class="today"></i>今日やる</span><span><i class="lock"></i>まだ始まっていない区切り</span></div>`;
 
 /** 日ごとのモザイク。statusOf(day) が 'full'|'part'|'zero'|'none'|'done' を返す */
 function calendar(start, end, d, statusOf, marks) {
   let html = '';
   for (let i = 0; i < P.toDate(start).getDay(); i++) html += '<i class="blank"></i>';
-  const names = { full: '全部できた', part: '一部だけ', zero: '記録なし', none: '開始前', done: '完了後' };
+  const names = { full: '全部できた', part: '一部だけ', zero: '記録なし', none: 'やる分なし（開始前・休み・区切り待ち）', done: '完了後' };
   for (let i = 0; i <= P.diffDays(start, end); i++) {
     const day = P.addDays(start, i);
     let cls, tip;
@@ -95,7 +109,7 @@ function calendar(start, end, d, statusOf, marks) {
   }
   const dl = WD.map((w, i) => `<span>${i % 2 ? w : ''}</span>`).join('');
   return `<div class="cal-wrap"><div class="cal-days">${dl}</div><div class="cal-scroll"><div class="cal" role="img" aria-label="日ごとの達成モザイク">${html}</div></div></div>
-  <div class="legend"><span><i class="s-full"></i>全部できた</span><span><i class="s-part"></i>一部だけ</span><span><i class="s-zero"></i>記録なし</span><span><i class="s-none"></i>開始前</span><span><i class="future"></i>これから</span><span><i class="future is-mark"></i>${Object.values(marks).includes('試験日') ? '試験日' : '目標日'}</span></div>`;
+  <div class="legend"><span><i class="s-full"></i>全部できた</span><span><i class="s-part"></i>一部だけ</span><span><i class="s-zero"></i>記録なし</span><span><i class="s-none"></i>やる分なし</span><span><i class="future"></i>これから</span><span><i class="future is-mark"></i>${Object.values(marks).some(v => v.includes('試験日')) ? '試験日・予定' : '目標日'}</span></div>`;
 }
 function goalDayStatus(mats, day) {
   const sts = mats.map(m => P.dayStatus(m, day)).filter(s => s !== 'none' && s !== 'done');
@@ -126,6 +140,8 @@ function statusPill(m, d) {
   const t = today(m, d);
   if (t.finished) return '<span class="pill rev">完了</span>';
   if (t.q.beforeStart) return `<span class="pill muted">${md(m.start)}から開始</span>`;
+  if (t.q.rest) return '<span class="pill muted">休みの日</span>';
+  if (t.q.waiting) return `<span class="pill good">${t.q.next ? `次は${md(t.q.next.start)}から` : '開いている分は完了'}</span>`;
   let s;
   if (!t.left) s = '<span class="pill good">今日のノルマ達成</span>';
   else s = `<span class="pill hot">あと ${t.left}${uw(m)}</span>`;
@@ -144,8 +160,11 @@ function daysTo(date, d) {
   const n = P.diffDays(d, date);
   return n > 0 ? `あと <b class="num">${n}</b> 日` : n === 0 ? '<b>今日</b>' : '終了';
 }
-const at = (m, u) => { const w = P.where(m, u); return `${w.r}周目 ${pos(m, w.p)}`; };
+const at = (m, u) => { const w = P.where(m, u); const sec = P.sectionAt(m, w.p); return `${w.r}周目 ${sec ? `［${esc(sec.name)}］` : ''}${pos(m, w.p)}`; };
 function quotaBlock(m, d, t) {
+  if (t.q.rest) return `<div class="task"><div class="task-h"><span class="label">今日のノルマ</span></div><div class="sub">今日は休みの日です（目標の「曜日ごとの量」で0にしている曜日）。</div>${recForm(m, d, false)}</div>`;
+  if (t.q.waiting) return `<div class="task"><div class="task-h"><span class="label">今日のノルマ</span><span class="ok">✓ 開いている分は完了</span></div>
+    <div class="sub">いま解ける範囲は1周目を終えました。${t.q.next ? `次は <b>${mdw(t.q.next.start)}</b> から「${esc(t.q.next.name)}」が始まります。` : ''}</div>${recForm(m, d, false)}</div>`;
   const bar = t.q.units ? Math.min(100, Math.round(t.done / t.q.units * 100)) : 100;
   return `<div class="task">
     <div class="task-h"><span class="label">${t.q.beforeStart ? '開始日のノルマ' : '今日のノルマ'}</span>${t.left || t.q.beforeStart ? '' : '<span class="ok">✓ 達成</span>'}</div>
@@ -164,11 +183,99 @@ function recForm(m, d, withDate) {
   return `<form class="rec" data-rec="${m.id}">
     ${withDate ? `<input type="date" id="rd-${m.id}" value="${d}" max="${P.todayStr()}" min="${m.start}" aria-label="日付">` : ''}
     <select id="rr-${m.id}" aria-label="周目">${opts}</select>
-    <span class="lbl">${m.unit === 'q' ? '問' : 'p.'}</span>
+    <span class="lbl">${m.unit === 'q' ? '問' : m.unit === 'k' ? '第' : 'p.'}</span>
     <input type="number" id="rp-${m.id}" min="0" max="${m.total}" inputmode="numeric" placeholder="${ph}" aria-label="どこまで進んだか">
-    <span class="lbl">まで進んだ</span>
+    <span class="lbl">${m.unit === 'k' ? '回' : ''}まで進んだ</span>
     <button class="btn primary" type="submit">記録</button>
   </form>`;
+}
+
+/* ---------- 予定（答練・模試など） ---------- */
+const eventsOf = g => (g.events || []).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+/** 最初の画面に出す予定: 過ぎたのにまだの分（2週間以内）と、これから1週間の分 */
+function weekEvents(g, d) {
+  const from = P.addDays(d, -14), to = P.addDays(d, 6);
+  return eventsOf(g).filter(ev => !ev.done && ev.date >= from && ev.date <= to);
+}
+function eventItem(g, ev, d, withTools) {
+  const late = !ev.done && ev.date < d;
+  return `<li class="ev${ev.done ? ' done' : ''}${late ? ' late' : ''}${ev.date === d ? ' now' : ''}">
+    <label class="check"><input type="checkbox" data-evdone="${g.id}|${ev.id}"${ev.done ? ' checked' : ''}> <span class="ev-d num">${mdw(ev.date)}</span> <span class="ev-t">${esc(ev.title)}</span></label>
+    ${late ? '<span class="late-t">まだ</span>' : ''}
+    ${withTools ? `<span class="ev-tools"><button class="btn ghost sm" data-act="scorefrom" data-id="${g.id}" data-ev="${ev.id}">点数を記録</button><button class="btn ghost sm" data-act="delev" data-id="${g.id}" data-ev="${ev.id}" aria-label="予定を削除">削除</button></span>` : ''}
+  </li>`;
+}
+function eventsPanel(g, d) {
+  const list = eventsOf(g);
+  const next = list.filter(ev => ev.date >= d && !ev.done)[0];
+  // まだの分（過ぎたもの）と、これからの5件だけを先に出す。全部は「すべての予定」を開く
+  const soon = [...list.filter(ev => ev.date < d && !ev.done), ...list.filter(ev => ev.date >= d && !ev.done).slice(0, 5)];
+  return `<section class="panel" id="events">
+    <h2>予定 <span class="label">答練・模試・講座など。終わったらチェック</span></h2>
+    ${next ? `<div class="sub">次の予定: ${mdw(next.date)} ${esc(next.title)}（${daysTo(next.date, d)}）</div>` : ''}
+    ${soon.length ? `<ul class="evs">${soon.map(ev => eventItem(g, ev, d, true)).join('')}</ul>` : (list.length ? '' : '<div class="sub">まだ予定がありません。</div>')}
+    ${list.length ? `<details class="evall"><summary>すべての予定（${list.length}件・済み ${list.filter(ev => ev.done).length}件）</summary><ul class="evs">${list.map(ev => eventItem(g, ev, d, true)).join('')}</ul></details>` : ''}
+    <form class="rec" id="evform" data-goal="${g.id}">
+      <input type="date" id="ev-date" value="${d}" aria-label="予定の日付">
+      <input id="ev-title" maxlength="40" placeholder="例: 山川答練 労基1" aria-label="予定の名前" class="grow">
+      <button class="btn" type="submit">予定を追加</button>
+    </form>
+  </section>`;
+}
+
+/* ---------- 点数の記録 ---------- */
+const scoresOf = g => (g.scores || []).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+/** 点数の推移（得点率）の折れ線 */
+function scoreChart(g) {
+  const list = scoresOf(g).filter(x => x.max > 0);
+  if (list.length < 1) return '';
+  const W = 640, H = 200, L = 36, R = 12, T = 12, B = 28;
+  const x = i => L + (list.length === 1 ? (W - L - R) / 2 : i * (W - L - R) / (list.length - 1));
+  const y = v => T + (1 - v) * (H - T - B);
+  const series = kind => list.map((s, i) => ({ s, i })).filter(o => o.s.kind === kind);
+  const line = (pts, cls) => pts.length > 1 ? `<polyline class="${cls}" points="${pts.map(o => `${x(o.i)},${y(o.s.score / o.s.max)}`).join(' ')}"/>` : '';
+  const dots = (pts, cls) => pts.map(o => `<circle class="${cls}" cx="${x(o.i)}" cy="${y(o.s.score / o.s.max)}" r="4"><title>${esc(`${md(o.s.date)} ${o.s.title}：${o.s.score}/${o.s.max}`)}</title></circle>`).join('');
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(v => `<line class="sc-grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="sc-ax" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v * 100}%</text>`).join('');
+  const tgt = g.scoreTarget ? `<line class="sc-tgt" x1="${L}" x2="${W - R}" y1="${y(g.scoreTarget / 70)}" y2="${y(g.scoreTarget / 70)}"/><text class="sc-tgtt" x="${W - R}" y="${y(g.scoreTarget / 70) - 5}" text-anchor="end">択一の目標 ${g.scoreTarget}点</text>` : '';
+  const xl = list.map((s, i) => (list.length <= 12 || i % Math.ceil(list.length / 12) === 0) ? `<text class="sc-ax" x="${x(i)}" y="${H - 8}" text-anchor="middle">${md(s.date)}</text>` : '').join('');
+  const kinds = ['taku', 'sen', 'ans'];
+  return `<div class="sc-wrap"><svg class="sc" viewBox="0 0 ${W} ${H}" role="img" aria-label="点数の推移（得点率）">${grid}${tgt}${kinds.map(k => line(series(k), 'sc-l ' + k)).join('')}${kinds.map(k => dots(series(k), 'sc-p ' + k)).join('')}${xl}</svg></div>
+  <div class="legend"><span><i class="sc-k taku"></i>択一式</span><span><i class="sc-k sen"></i>選択式</span><span><i class="sc-k ans"></i>答練・小テスト</span>${g.scoreTarget ? '<span><i class="sc-k tgt"></i>択一の目標点</span>' : ''}</div>`;
+}
+/** いちばん新しい模試・本試験の科目別の点と足切りの目安 */
+function cutCheck(g, kind) {
+  const K = KINDS[kind];
+  const last = scoresOf(g).filter(x => x.kind === kind && x.subjects && Object.keys(x.subjects).length).pop();
+  if (!last) return '';
+  const rows = K.subj.map(name => {
+    const v = last.subjects[name];
+    if (v === undefined || v === null || v === '') return '';
+    const bad = v < K.cut;
+    return `<div class="cmp-row"><span class="cmp-name">${esc(name)}</span><div class="cmp-bar cut" style="--cut:${K.cut / K.per * 100}%"><i class="r${bad ? ' bad' : ''}" style="width:${Math.min(100, v / K.per * 100)}%"></i></div><span class="cmp-v num${bad ? ' miss-s' : ''}">${v}<small>/${K.per}</small></span></div>`;
+  }).join('');
+  return `<div class="cutbox"><div class="label">${esc(last.title)}（${md(last.date)}）の${kind === 'taku' ? '択一式' : '選択式'}・科目別 <span class="sub">縦の線が足切りの目安（${K.cut}点）。赤は目安より下</span></div><div class="cmp">${rows}</div></div>`;
+}
+function scoresPanel(g, d) {
+  const list = scoresOf(g).reverse();
+  const pf = ui.scorePrefill && ui.scorePrefill.goal === g.id ? ui.scorePrefill : null;
+  const kind = pf ? pf.kind : 'taku';
+  const subjInputs = k => KINDS[k].subj.map((n, i) => `<label class="sj"><span>${esc(n)}</span><input type="number" min="0" max="${KINDS[k].per}" step="1" inputmode="numeric" id="sj-${k}-${i}" aria-label="${esc(n)}の点数"><small>/${KINDS[k].per}</small></label>`).join('');
+  const rows = list.map(x => `<tr><td>${mdw(x.date)}</td><td>${esc(x.title)}</td><td>${esc(KINDS[x.kind] ? KINDS[x.kind].label.replace(/（.*）/, '') : '')}</td><td class="num">${x.score}/${x.max}</td><td class="num">${Math.round(x.score / x.max * 100)}%</td><td><button class="btn ghost sm" data-act="delscore" data-id="${g.id}" data-sc="${x.id}">削除</button></td></tr>`).join('');
+  return `<section class="panel" id="scores">
+    <h2>点数の記録 <span class="label">答練・模試・本試験の点数。推移と足切りの目安を表示</span></h2>
+    ${scoreChart(g)}
+    ${cutCheck(g, 'taku')}${cutCheck(g, 'sen')}
+    <form class="form" id="scoreform" data-goal="${g.id}">
+      <div class="field"><label for="sc-date">日付</label><input id="sc-date" type="date" value="${pf ? pf.date : d}" required></div>
+      <div class="field"><label for="sc-title">名前</label><input id="sc-title" maxlength="40" value="${esc(pf ? pf.title : '')}" placeholder="例: アドバンス模試" required></div>
+      <div class="field"><label for="sc-kind">種類</label><select id="sc-kind">${Object.entries(KINDS).map(([k, v]) => `<option value="${k}"${k === kind ? ' selected' : ''}>${v.label}</option>`).join('')}</select></div>
+      <div class="field"><label>点数 / 満点</label><div class="rec"><input id="sc-score" type="number" min="0" step="1" inputmode="numeric" aria-label="点数"> <span class="lbl">/</span> <input id="sc-max" type="number" min="1" step="1" inputmode="numeric" value="${KINDS[kind].max}" aria-label="満点"></div><span class="hint">科目別の点を入れると、合計は自動で計算します。</span></div>
+      <div class="full sjbox" data-kind="taku"${kind === 'taku' ? '' : ' hidden'}><div class="label">科目別（任意）</div><div class="sjs">${subjInputs('taku')}</div></div>
+      <div class="full sjbox" data-kind="sen"${kind === 'sen' ? '' : ' hidden'}><div class="label">科目別（任意）</div><div class="sjs">${subjInputs('sen')}</div></div>
+      <div class="actions full"><button class="btn primary" type="submit">点数を記録</button></div>
+    </form>
+    ${rows ? `<div class="table-scroll"><table class="log"><thead><tr><th>日付</th><th>名前</th><th>種類</th><th>点数</th><th>得点率</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+  </section>`;
 }
 
 /* ---------- 画面 ---------- */
@@ -191,7 +298,7 @@ function header() {
   </div>${store.error ? `<div class="note err">${esc(store.error)}</div>` : ''}`;
 }
 function nag(mats, d) {
-  const act = mats.filter(m => { const t = today(m, d); return !t.finished && !t.q.beforeStart; });
+  const act = mats.filter(m => { const t = today(m, d); return !t.finished && !t.q.beforeStart && !t.q.rest && !t.q.waiting; });
   if (!act.length) return '';
   const left = act.map(m => ({ m, t: today(m, d) })).filter(x => x.t.left);
   const st = P.streak(mats, d);
@@ -235,6 +342,7 @@ function goalSection(g, mats, d) {
       <div class="count${n >= 0 && n <= 30 ? ' near' : ''}">${n > 0 ? `<span class="label">試験まで</span><span><b class="num">${n}</b>日</span>` : n === 0 ? '<b>今日が試験日</b>' : '<span class="label">試験日を過ぎました</span>'}</div>
       <button class="btn sm" data-act="goal" data-id="${g.id}">目標を見る →</button>
     </div>
+    ${weekEvents(g, d).length ? `<div class="weekev"><span class="label">今週の予定</span><ul class="evs">${weekEvents(g, d).map(ev => eventItem(g, ev, d, false)).join('')}</ul></div>` : ''}
     ${mats.length ? `<div class="cards">${mats.map(m => card(m, d)).join('')}</div>`
       : `<div class="empty sm"><p>この目標にはまだ教材がありません。</p><button class="btn primary sm" data-act="add" data-goal="${g.id}">教材を登録する</button></div>`}
   </section>`;
@@ -257,6 +365,12 @@ function home() {
     + (loose.length ? `<section class="gsec"><div class="ghead"><div class="gname"><h2>目標なし</h2><span class="sub">「設定を変える」から目標に入れられます</span></div></div><div class="cards">${loose.map(m => card(m, d)).join('')}</div></section>` : '')
     + `<div class="actions"><button class="btn" data-act="addgoal">＋ 目標を作る</button><button class="btn" data-act="add">＋ 教材を登録する</button></div>`;
 }
+/** カレンダーの印: 試験日と予定 */
+function goalMarks(g) {
+  const marks = { [g.examDate]: '試験日' };
+  for (const ev of g.events || []) marks[ev.date] = marks[ev.date] ? `${marks[ev.date]}・${ev.title}` : ev.title;
+  return marks;
+}
 function goalView() {
   const g = goalById(ui.id);
   if (!g) { ui.view = 'home'; return home(); }
@@ -265,8 +379,8 @@ function goalView() {
   const n = P.diffDays(d, g.examDate);
   const totalUnits = mats.reduce((a, m) => a + m.total * m.reps, 0);
   const doneUnits = mats.reduce((a, m) => a + Math.min(sumCount(m, d), m.total * m.reps), 0);
-  const leftToday = mats.reduce((a, m) => { const t = today(m, d); return a + (t.finished ? 0 : t.left); }, 0);
-  const start = mats.reduce((a, m) => (a && a < m.start ? a : m.start), null);
+  const leftToday = mats.reduce((a, m) => { const t = today(m, d); return a + (t.finished || t.q.beforeStart ? 0 : t.left); }, 0);
+  const start = mats.reduce((a, m) => (a && a < m.start ? a : m.start), null) || d;
   const end = [g.examDate, d, ...mats.map(m => m.target)].sort().pop();
   const cmp = mats.map(m => {
     const a = avgRot(m, d), learned = Math.min(1, P.posThrough(m, d) / m.total) * 100;
@@ -295,12 +409,14 @@ function goalView() {
   </section>
   <section class="panel">
     <h2>日ごとの達成 <span class="label">この目標の教材を全部やった日が緑</span></h2>
-    ${calendar(start, end, d, day => goalDayStatus(mats.filter(m => m.start <= day), day), { [g.examDate]: '試験日' })}
+    ${calendar(start, end, d, day => goalDayStatus(mats.filter(m => m.start <= day), day), goalMarks(g))}
   </section>
   <section class="panel">
     <h2>周回の予定 <span class="label">教材ごと・いまのペースで計算</span></h2>
     <div class="gm">${mats.map(m => `<div class="gm-row"><span class="gm-name">${esc(m.name)}</span><div>${roundsPanel(m, d, false)}</div></div>`).join('')}</div>
   </section>` : ''}
+  ${eventsPanel(g, d)}
+  ${scoresPanel(g, d)}
   <section class="panel">
     <div class="dhead"><h2>教材</h2><button class="btn primary sm" data-act="add" data-goal="${g.id}">＋ この目標に教材を登録</button></div>
     ${mats.length ? `<div class="cards">${mats.map(m => card(m, d)).join('')}</div>` : '<div class="sub">まだ教材がありません。</div>'}
@@ -308,7 +424,7 @@ function goalView() {
   <section class="panel">
     <h2>この目標を削除</h2>
     <div class="actions">${ui.confirmDel
-      ? `<span class="err-text">目標「${esc(g.name)}」を削除します。中の教材と記録は消えずに「目標なし」に移ります。</span><button class="btn danger solid" data-act="delgoal" data-id="${g.id}">削除する</button><button class="btn" data-act="nodel">やめる</button>`
+      ? `<span class="err-text">目標「${esc(g.name)}」と、その予定・点数の記録を削除します（元に戻せません）。中の教材と学習の記録は消えずに「目標なし」に移ります。</span><button class="btn danger solid" data-act="delgoal" data-id="${g.id}">削除する</button><button class="btn" data-act="nodel">やめる</button>`
       : '<button class="btn danger" data-act="askdel">この目標を削除</button>'}</div>
   </section>`;
 }
@@ -357,6 +473,7 @@ function detail() {
   </section>
   <section class="panel">
     <h2>設定</h2>
+    ${P.sectionsOf(m) ? `<div class="table-scroll"><table class="log"><thead><tr><th>区切り</th><th>範囲</th><th>数</th><th>開始日</th></tr></thead><tbody>${P.sectionsOf(m).map(sec => `<tr><td>${esc(sec.name)}</td><td>${range(m, sec.from, sec.to)}</td><td class="num">${sec.to - sec.from + 1}</td><td>${mdw(sec.start)}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <div class="meta"><span>目標 <b>${g ? esc(g.name) : 'なし'}</b></span><span>全 <b class="num">${m.total}</b> ${uw(m)}</span><span>開始日 <b class="num">${md(m.start)}</b></span><span>${g && m.followGoal ? '目標日（試験日）' : '目標日'} <b class="num">${md(m.target)}</b></span><span>目標 <b class="num">${m.reps}</b> 回転</span><span>2周目以降の速さ <b>${speedName(m.speed)}</b></span></div>
     <div class="actions">
       <button class="btn" data-act="edit" data-id="${m.id}">設定を変える</button>
@@ -384,21 +501,29 @@ function form() {
       <div class="field full"><label for="f-goal">目標</label><select id="f-goal"><option value="">目標なし</option>${goals.map(g => `<option value="${g.id}"${g.id === gid ? ' selected' : ''}>${esc(g.name)}（試験日 ${md(g.examDate)}）</option>`).join('')}</select></div>
       <div class="field"><label>数える単位</label>
         <div class="seg">
-          <label><input type="radio" name="f-unit" value="p"${v.unit !== 'q' ? ' checked' : ''}><span>ページ</span></label>
+          <label><input type="radio" name="f-unit" value="p"${v.unit !== 'q' && v.unit !== 'k' ? ' checked' : ''}><span>ページ</span></label>
           <label><input type="radio" name="f-unit" value="q"${v.unit === 'q' ? ' checked' : ''}><span>問題</span></label>
+          <label><input type="radio" name="f-unit" value="k"${v.unit === 'k' ? ' checked' : ''}><span>回（講義）</span></label>
         </div></div>
-      <div class="field"><label for="f-total">ページ数・問題数</label><input id="f-total" type="number" min="1" max="5000" inputmode="numeric" required value="${esc(v.total)}" placeholder="例: 320"></div>
+      <div class="field"><label for="f-total">ページ数・問題数・回数</label><input id="f-total" type="number" min="1" max="5000" inputmode="numeric" required value="${esc(v.total)}" placeholder="例: 320"><span class="hint" id="f-total-hint" hidden>区切りの数の合計です（区切りを消すと入力できます）。</span></div>
       <div class="field"><label for="f-start">開始日</label><input id="f-start" type="date" required value="${v.start}"></div>
       <div class="field"><label for="f-target">目標日</label>
         <label class="check" id="f-follow-wrap"><input type="checkbox" id="f-follow"${v.followGoal !== false ? ' checked' : ''}> <span id="f-follow-txt">試験日と同じ</span></label>
         <input id="f-target" type="date" required value="${v.target}"><span class="hint">この日までに、すべてのページを目標の回数やり終える計画にします。試験より前に仕上げたい教材は、チェックを外して早い日にします。</span></div>
       <div class="field"><label for="f-reps">目標の回転数</label><input id="f-reps" type="number" min="1" max="10" inputmode="numeric" required value="${v.reps}"><span class="hint">教材を何周するか。1周目を最後まで終えてから、2周目を p.1 から始めます。</span></div>
       <div class="field"><label for="f-speed">2周目以降の速さ</label><select id="f-speed">${P.SPEEDS.map(([s, t]) => `<option value="${s}"${(v.speed ?? P.DEFAULT_SPEED) === s ? ' selected' : ''}>${t}</option>`).join('')}</select><span class="hint">「半分」なら、2周目は1周目の半分、3周目はさらに半分の日数で回る計画にします。忘れる前に次の周が来るようにするためです。</span></div>
+      <div class="field full"><label>科目ごとの区切り（任意）</label>
+        <span class="hint">科目ごとに解き始める日を決めたいときに使います。1周目は、開始日が来た区切りの分だけ今日のノルマに入ります。2周目からは全部を回します。上から順に、名前・数・開始日を入れてください。</span>
+        <div id="secrows">${(P.sectionsOf(v) || []).map(sec => secRow(sec.name, sec.to - sec.from + 1, sec.start)).join('')}</div>
+        <div><button class="btn sm" type="button" data-act="addsec">＋ 区切りを追加</button></div></div>
       <div class="full plan-preview" id="preview" aria-live="polite"></div>
       ${ui.formErr ? `<div class="full err-text">${esc(ui.formErr)}</div>` : ''}
       <div class="actions full"><button class="btn primary" type="submit">${m ? '変更を保存' : '登録する'}</button></div>
     </form>
   </section>`;
+}
+function secRow(name = '', count = '', start = '') {
+  return `<div class="sec-row"><input class="sr-name" maxlength="20" value="${esc(name)}" placeholder="例: 労災" aria-label="区切りの名前"><input class="sr-count" type="number" min="1" inputmode="numeric" value="${esc(count)}" placeholder="数" aria-label="区切りの数"><input class="sr-start" type="date" value="${esc(start)}" aria-label="区切りの開始日"><button class="btn ghost sm" type="button" data-act="delsec" aria-label="この区切りを消す">消す</button></div>`;
 }
 /** 目標と「試験日と同じ」に合わせて、目標日の欄を切り替える */
 function syncFollow() {
@@ -420,8 +545,15 @@ function readForm() {
   const goalId = val('f-goal') || null;
   const g = goalById(goalId);
   const followGoal = !!g && document.getElementById('f-follow').checked;
+  const rows = [...document.querySelectorAll('#secrows .sec-row')].map(r => ({ name: r.querySelector('.sr-name').value.trim(), count: Number(r.querySelector('.sr-count').value), start: r.querySelector('.sr-start').value }));
+  const sections = rows.length ? P.buildSections(rows) : null;
+  // 区切りがあるときは、数の合計を全体の数にする
+  const totalEl = document.getElementById('f-total');
+  if (sections) { const sum = rows.reduce((a, r) => a + (Number.isInteger(r.count) && r.count > 0 ? r.count : 0), 0); totalEl.value = sum || ''; }
+  totalEl.readOnly = !!sections;
+  document.getElementById('f-total-hint').hidden = !sections;
   return {
-    name: val('f-name'), total: Number(val('f-total')), start: val('f-start'),
+    sections, name: val('f-name'), total: Number(val('f-total')), start: val('f-start'),
     target: followGoal ? g.examDate : val('f-target'),
     reps: Number(val('f-reps')), speed: Number(val('f-speed')),
     unit: document.querySelector('input[name="f-unit"]:checked').value,
@@ -442,6 +574,8 @@ function updatePreview() {
 function goalForm() {
   const g = ui.id ? goalById(ui.id) : null;
   const v = g || { name: '', examDate: '' };
+  const wts = Array.isArray(v.dayWeights) && v.dayWeights.length === 7 ? v.dayWeights : [1, 1, 1, 1, 1, 1, 1];
+  const wsel = i => `<label class="wd"><span>${WD[i]}</span><select id="g-w${i}" aria-label="${WD[i]}曜日の量">${WEIGHT_OPTS.map(o => `<option value="${o}"${Number(wts[i]) === o ? ' selected' : ''}>${o === 0 ? '休み' : `×${o}`}</option>`).join('')}</select></label>`;
   return `${header()}
   <div class="dhead"><button class="btn ghost" data-act="${g ? 'goal' : 'home'}" data-id="${g ? g.id : ''}">← もどる</button></div>
   <section class="panel">
@@ -449,6 +583,9 @@ function goalForm() {
     <form class="form" id="goalform">
       <div class="field full"><label for="g-name">目標の名前</label><input id="g-name" required maxlength="40" value="${esc(v.name)}" placeholder="例: 社労士試験 2027"></div>
       <div class="field"><label for="g-exam">試験日</label><input id="g-exam" type="date" required value="${v.examDate}"><span class="hint">「試験日と同じ」にした教材は、この日に合わせて計画します。試験日を変えると、その教材の計画も組み直します。</span></div>
+      <div class="field"><label for="g-target">択一式の目標点（任意）</label><input id="g-target" type="number" min="1" max="70" inputmode="numeric" value="${esc(v.scoreTarget || '')}" placeholder="例: 50"><span class="hint">点数の記録のグラフに線を引きます。</span></div>
+      <div class="field full"><label>曜日ごとの量</label><div class="wds">${[1, 2, 3, 4, 5, 6, 0].map(wsel).join('')}</div>
+        <span class="hint">この目標の教材の、曜日ごとのノルマの比率です。「×2」の日は「×1」の日の2倍、「休み」の日はノルマが出ません。例: 平日×1、土日×2.5（平日2時間・土日5時間のとき）。</span></div>
       ${ui.formErr ? `<div class="full err-text">${esc(ui.formErr)}</div>` : ''}
       <div class="actions full"><button class="btn primary" type="submit">${g ? '変更を保存' : '作る'}</button></div>
     </form>
@@ -486,6 +623,11 @@ function account() {
   <section class="panel"><h2>画面の明るさ</h2>
     <div class="seg theme">${opt('light', '明るい', 'おすすめ。文字が読みやすい')}${opt('dark', '暗い', '夜・暗い部屋で')}${opt('auto', '端末に合わせる', '')}</div>
   </section>
+  ${ui.pendingImport ? `<section class="panel" id="importbox"><h2>計画ファイルの読み込み</h2>
+    <div class="sub">「${esc(ui.pendingImport.goal.name)}」の計画（教材 ${ui.pendingImport.materials.length} 件・予定 ${(ui.pendingImport.goal.events || []).length} 件）を読み込みます。入れる目標を選んでください。すでにある予定と同じ日・同じ名前のものは入れません。</div>
+    <div class="field"><label for="imp-goal">入れる目標</label><select id="imp-goal"><option value="new">新しい目標を作る（${esc(ui.pendingImport.goal.name)}・試験日 ${md(ui.pendingImport.goal.examDate)}）</option>${goalsSorted().map(g => `<option value="${g.id}">${esc(g.name)}（試験日 ${md(g.examDate)}）</option>`).join('')}</select></div>
+    <div class="actions"><button class="btn primary" data-act="importgo">読み込む</button><button class="btn" data-act="importcancel">やめる</button></div>
+  </section>` : ''}
   <section class="panel"><h2>バックアップ</h2>
     <div class="sub">記録をファイルに書き出しておくと、機種変更のときや、まちがえて消したときに戻せます。</div>
     <div class="actions"><button class="btn" data-act="export">ファイルに書き出す</button>
@@ -533,6 +675,17 @@ document.addEventListener('click', e => {
     saveMat(P.undoDay(m, b.dataset.date).m, `${mdw(b.dataset.date)}の記録を取り消しました`);
   }
   else if (act === 'sample') addSample();
+  else if (act === 'addsec') { document.getElementById('secrows').insertAdjacentHTML('beforeend', secRow()); updatePreview(); }
+  else if (act === 'delsec') { b.closest('.sec-row').remove(); updatePreview(); }
+  else if (act === 'delev') { const g = goalById(id); save('goals', { ...g, events: (g.events || []).filter(x => x.id !== b.dataset.ev) }, '予定を削除しました'); }
+  else if (act === 'delscore') { const g = goalById(id); save('goals', { ...g, scores: (g.scores || []).filter(x => x.id !== b.dataset.sc) }, '点数の記録を削除しました'); }
+  else if (act === 'scorefrom') {
+    const g = goalById(id); const ev = (g.events || []).find(x => x.id === b.dataset.ev);
+    ui.scorePrefill = { goal: id, date: ev.date, title: ev.title, kind: /模試|本試験/.test(ev.title) ? 'taku' : 'ans' };
+    render(); document.getElementById('scores').scrollIntoView({ behavior: 'smooth' }); document.getElementById('sc-score').focus();
+  }
+  else if (act === 'importgo') applyImport();
+  else if (act === 'importcancel') { ui.pendingImport = null; render(); }
   else if (act === 'logout') store.logout().then(() => toast('ログアウトしました。この端末だけの記録を表示しています'));
   else if (act === 'move') store.moveLocalToCloud().then(n => { toast(`${n}件の教材をアカウントに移しました`); render(); }).catch(() => toast('移せませんでした。通信を確かめてください'));
   else if (act === 'reset') {
@@ -550,6 +703,8 @@ document.addEventListener('submit', e => {
   if (f.id === 'matform') return saveForm();
   if (f.id === 'goalform') return saveGoalForm();
   if (f.id === 'loginform') return doLogin(e.submitter && e.submitter.dataset.mode);
+  if (f.id === 'evform') return addEvent(f.dataset.goal);
+  if (f.id === 'scoreform') return addScore(f.dataset.goal);
   const id = f.dataset.rec;
   const m = id && byId(id);
   if (!m) return;
@@ -569,9 +724,26 @@ document.addEventListener('submit', e => {
     : roundDone ? `${g / m.total}周目が終わりました！次は${g / m.total + 1}周目の${pos(m, 1)}からです`
     : !t.left ? '今日のノルマ達成です' : `記録しました。今日はあと${t.left}${uw(m)}`);
 });
-document.addEventListener('input', e => { if (e.target.closest('#matform')) updatePreview(); });
+document.addEventListener('input', e => {
+  if (e.target.closest('#matform')) updatePreview();
+  if (e.target.closest('.sjbox')) { // 科目別の点から合計を出す
+    const box = e.target.closest('.sjbox');
+    const vals = [...box.querySelectorAll('input')].map(i => i.value === '' ? null : Number(i.value)).filter(v => v !== null);
+    if (vals.length) document.getElementById('sc-score').value = vals.reduce((a, b) => a + b, 0);
+  }
+});
 document.addEventListener('change', e => {
   if (e.target.id === 'importfile') importFile(e.target.files[0]);
+  if (e.target.dataset.evdone) {
+    const [gid, evid] = e.target.dataset.evdone.split('|');
+    const g = goalById(gid);
+    save('goals', { ...g, events: (g.events || []).map(x => (x.id === evid ? { ...x, done: e.target.checked } : x)) }, e.target.checked ? '予定を「済み」にしました' : '予定を「まだ」に戻しました');
+  }
+  if (e.target.id === 'sc-kind') {
+    const k = e.target.value;
+    document.querySelectorAll('.sjbox').forEach(el => { el.hidden = el.dataset.kind !== k; });
+    document.getElementById('sc-max').value = KINDS[k].max;
+  }
   if (e.target.name === 'theme') setTheme(e.target.value);
 });
 
@@ -593,6 +765,7 @@ function saveForm() {
   const raw = ui.id ? store.mats.find(x => x.id === ui.id) : null;
   const old = raw ? P.migrate(raw) : null;
   if (old && P.logList(old).some(([, e]) => e[1] > v.total || e[0] > v.reps)) { ui.formErr = 'これまでの記録より少ないページ数・回転数にはできません。'; render(); return; }
+  if (v.sections && v.sections[0].start < v.start) v.start = v.sections[0].start;
   const m = old ? { ...old, ...v } : { id: newId('m'), createdAt: Date.now(), log: {}, ...v };
   saveMat(m, old ? '設定を保存しました。今日の量を計算し直しました' : `「${v.name}」を登録しました`);
   const g = goalById(m.goalId);
@@ -610,9 +783,38 @@ function saveGoalForm() {
     if (bad) err = `教材「${bad.name}」の開始日（${md(bad.start)}）より後の日にしてください。`;
   }
   if (err) { ui.formErr = err; render(); return; }
-  const g = old ? { ...old, name, examDate } : { id: newId('g'), createdAt: Date.now(), name, examDate };
+  const dayWeights = [0, 1, 2, 3, 4, 5, 6].map(i => Number(document.getElementById('g-w' + i).value));
+  const scoreTarget = Number(document.getElementById('g-target').value) || null;
+  if (!err && dayWeights.every(w => w === 0)) err = '曜日ごとの量が全部「休み」になっています。どこかの曜日を休み以外にしてください。';
+  if (err) { ui.formErr = err; render(); return; }
+  const g = old ? { ...old, name, examDate, dayWeights, scoreTarget } : { id: newId('g'), createdAt: Date.now(), name, examDate, dayWeights, scoreTarget, events: [], scores: [] };
   save('goals', g, old ? '目標を保存しました。教材の計画を組み直しました' : `目標「${name}」を作りました。教材を登録しましょう`);
   if (old) go('goal', g.id); else go('form', null, { goal: g.id });
+}
+function addEvent(gid) {
+  const g = goalById(gid);
+  const date = document.getElementById('ev-date').value;
+  const title = document.getElementById('ev-title').value.trim();
+  if (!date || !title) return toast('予定の日付と名前を入れてください');
+  save('goals', { ...g, events: [...(g.events || []), { id: uid(), date, title, done: false }] }, `${mdw(date)}に「${title}」を追加しました`);
+}
+function addScore(gid) {
+  const g = goalById(gid);
+  const kind = document.getElementById('sc-kind').value;
+  const date = document.getElementById('sc-date').value;
+  const title = document.getElementById('sc-title').value.trim();
+  const score = Number(document.getElementById('sc-score').value);
+  const max = Number(document.getElementById('sc-max').value);
+  if (!date || !title) return toast('日付と名前を入れてください');
+  if (document.getElementById('sc-score').value === '' || !(score >= 0)) return toast('点数を入れてください');
+  if (!(max > 0) || score > max) return toast('満点は点数以上の数で入れてください');
+  const subjects = {};
+  if (KINDS[kind].subj) KINDS[kind].subj.forEach((n, i) => { const el = document.getElementById(`sj-${kind}-${i}`); if (el && el.value !== '') subjects[n] = Number(el.value); });
+  if (Object.values(subjects).some(v => !(v >= 0) || v > KINDS[kind].per)) return toast(`科目別の点は 0〜${KINDS[kind].per} で入れてください`);
+  ui.scorePrefill = null;
+  const cut = KINDS[kind].subj ? Object.entries(subjects).filter(([, v]) => v < KINDS[kind].cut).map(([n]) => n) : [];
+  save('goals', { ...g, scores: [...(g.scores || []), { id: uid(), date, title, kind, score, max, subjects }] },
+    cut.length ? `記録しました。足切りの目安より下: ${cut.join('・')}` : `記録しました（${score}/${max}点）`);
 }
 function deleteGoal(id) {
   const g = goalById(id);
@@ -654,6 +856,11 @@ function importFile(file) {
   rd.onload = () => {
     try {
       const j = JSON.parse(rd.result);
+      if (j && j.app === 'RPM' && j.kind === 'plan') { // 計画ファイル: 入れる目標を選んでから読み込む
+        if (!j.goal || !j.goal.name || !Array.isArray(j.materials)) throw new Error('bad');
+        ui.pendingImport = j; render(); document.getElementById('importbox').scrollIntoView({ behavior: 'smooth' });
+        return;
+      }
       const materials = j && j.app === 'RPM' && Array.isArray(j.materials) ? j.materials : null;
       const goals = j && Array.isArray(j.goals) ? j.goals : [];
       if (!materials || materials.some(m => !m.id || !m.name || !Number.isInteger(m.total)) || goals.some(g => !g.id || !g.name || !g.examDate)) throw new Error('bad');
@@ -662,6 +869,23 @@ function importFile(file) {
   };
   rd.onerror = () => toast('ファイルを開けませんでした');
   rd.readAsText(file);
+}
+/** 計画ファイルを、選んだ目標（または新しい目標）に入れる */
+function applyImport() {
+  const j = ui.pendingImport;
+  if (!j) return;
+  const sel = document.getElementById('imp-goal').value;
+  let g;
+  if (sel === 'new') g = { id: newId('g'), createdAt: Date.now(), name: j.goal.name, examDate: j.goal.examDate, dayWeights: j.goal.dayWeights || null, scoreTarget: j.goal.scoreTarget || null, events: [], scores: [] };
+  else { g = { ...goalById(sel) }; if (!Array.isArray(g.dayWeights) && j.goal.dayWeights) g.dayWeights = j.goal.dayWeights; if (!g.scoreTarget && j.goal.scoreTarget) g.scoreTarget = j.goal.scoreTarget; }
+  const have = new Set((g.events || []).map(ev => ev.date + '|' + ev.title));
+  const evs = (j.goal.events || []).filter(ev => !have.has(ev.date + '|' + ev.title)).map(ev => ({ id: uid(), date: ev.date, title: ev.title, done: false }));
+  g.events = [...(g.events || []), ...evs];
+  save('goals', g);
+  j.materials.forEach((m, i) => saveMat({ ...m, id: newId('m'), createdAt: Date.now() + i, goalId: g.id, log: {} }));
+  ui.pendingImport = null;
+  toast(`「${g.name}」に教材 ${j.materials.length} 件・予定 ${evs.length} 件を入れました`);
+  go('goal', g.id);
 }
 
 /* 日付が変わったら、今日の量を組み直して表示する */

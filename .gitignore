@@ -20,3 +20,9 @@ RPM_バックアップ_*.json
 .firebase/
 firebase-debug.log
 *-service-account*.json
+
+# 講座の計画ファイル（講座の日程・問題数。公開しない）
+計画ファイル/
+
+# 講座の資料（公開しない）
+*.gif
