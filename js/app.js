@@ -1,8 +1,8 @@
 // RPM の画面。計算は plan.js、保存は store.js。
 // 目標（例: 社労士試験・試験日）の中に教材をまとめる。教材の目標日は、試験日と同じにするか、教材ごとに決める。
 // 教材は周回型: p.1 から最後まで回り、2周目、3周目……と後の周ほど速く回る（plan.js）。
-import * as P from './plan.js?v=20261104a';
-import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104a';
+import * as P from './plan.js?v=20261104b';
+import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104b';
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const md = s => { const d = P.toDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
@@ -288,7 +288,7 @@ function streakHtml(mats, d) {
   return '<span class="streak">連続達成 <b class="num">0</b> 日</span>';
 }
 function header() {
-  const acct = !cloudAvailable() ? '設定' : store.mode === 'cloud' ? '同期中' : 'ログイン・同期';
+  const acct = !cloudAvailable() ? '設定' : store.mode === 'cloud' ? '設定（同期中）' : '設定・ログイン';
   return `<div class="top">
     <button class="brand" data-act="home" aria-label="一覧へ"><b>R<i>P</i>M</b><span>回転数で進める学習ノルマ</span></button>
     <div class="top-r">
@@ -617,6 +617,7 @@ function account() {
   const opt = (val, label, hint) => `<label><input type="radio" name="theme" value="${val}"${th === val ? ' checked' : ''}><span>${label}</span>${hint ? `<small>${hint}</small>` : ''}</label>`;
   return `${header()}
   <div class="dhead"><button class="btn ghost" data-act="home">← 一覧へ</button></div>
+  <h1 class="ptitle">設定</h1>
   <section class="panel"><h2>ログイン・同期</h2>${body}
     ${ui.acctErr ? `<div class="err-text">${esc(ui.acctErr)}</div>` : ''}${ui.acctMsg ? `<div class="ok">${esc(ui.acctMsg)}</div>` : ''}
   </section>
