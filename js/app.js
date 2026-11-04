@@ -1,8 +1,8 @@
 // RPM の画面。計算は plan.js、保存は store.js。
 // 目標（例: 社労士試験・試験日）の中に教材をまとめる。教材の目標日は、試験日と同じにするか、教材ごとに決める。
 // 教材は周回型: p.1 から最後まで回り、2周目、3周目……と後の周ほど速く回る（plan.js）。
-import * as P from './plan.js?v=20261104d';
-import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104d';
+import * as P from './plan.js?v=20261104e';
+import { createStore, cloudAvailable, authMessage } from './store.js?v=20261104e';
 
 const WD = ['日', '月', '火', '水', '木', '金', '土'];
 const md = s => { const d = P.toDate(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
@@ -19,7 +19,7 @@ const SEN = ['労基・安衛', '労災', '雇用', '労一', '社一', '健保'
 const KINDS = { taku: { label: '択一式（模試・本試験）', max: 70, subj: TAKU, per: 10, cut: 4 }, sen: { label: '選択式（模試・本試験）', max: 40, subj: SEN, per: 5, cut: 3 }, ans: { label: '答練・小テスト', max: '', subj: null } };
 const WEIGHT_OPTS = [0, 0.5, 1, 1.5, 2, 2.5, 3];
 const newId = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-// 版: index.html で読み込むときの ?v= の値（例: 20261104d → 2026.11.04d）。更新のたびに変える（CLAUDE.md の「更新するとき」）
+// 版: index.html で読み込むときの ?v= の値（例: 20261104e → 2026.11.04d）。更新のたびに変える（CLAUDE.md の「更新するとき」）
 const VER_RAW = new URL(import.meta.url).searchParams.get('v') || '';
 const verText = v => (/^\d{8}/.test(v) ? `${v.slice(0, 4)}.${v.slice(4, 6)}.${v.slice(6, 8)}${v.slice(8)}` : (v || '開発中'));
 const VERSION = verText(VER_RAW);
@@ -386,6 +386,71 @@ function home() {
     + (loose.length ? `<section class="gsec"><div class="ghead"><div class="gname"><h2>目標なし</h2><span class="sub">「設定を変える」から目標に入れられます</span></div></div><div class="cards">${loose.map(m => card(m, d)).join('')}</div></section>` : '')
     + `<div class="actions"><button class="btn" data-act="addgoal">＋ 目標を作る</button><button class="btn" data-act="add">＋ 教材を登録する</button></div>`;
 }
+/* ---------- 全体スケジュール（公式のカリキュラム図のような横の帯） ---------- */
+/** 予定を行に分ける: 名前の最初の言葉（例: 山川答練）が3件以上あれば1行、それ以外は「講座・模試など」 */
+function eventRows(g) {
+  const evs = eventsOf(g);
+  const key = ev => ev.title.split(/[\s　（(]/)[0];
+  const count = {};
+  evs.forEach(ev => { count[key(ev)] = (count[key(ev)] || 0) + 1; });
+  const rows = new Map();
+  evs.forEach(ev => {
+    const k = count[key(ev)] >= 3 ? key(ev) : '講座・模試など';
+    if (!rows.has(k)) rows.set(k, []);
+    rows.get(k).push(ev);
+  });
+  return [...rows.entries()];
+}
+function timeline(g, mats, d) {
+  const phases = Array.isArray(g.phases) ? g.phases : [];
+  const evs = eventsOf(g);
+  const dates = [d, g.examDate, ...mats.map(m => m.start), ...mats.map(m => m.target), ...phases.map(x => x.from), ...phases.map(x => x.to), ...evs.map(ev => ev.date)].filter(Boolean).sort();
+  const start = dates[0], end = dates[dates.length - 1];
+  const span = Math.max(1, P.diffDays(start, end) + 1);
+  const x = day => Math.max(0, Math.min(100, P.diffDays(start, day) / span * 100));
+  const bar = (a, b, cls, style, label, tip) => `<i class="tl-bar ${cls}" style="left:${x(a)}%;width:${Math.max(0.4, x(P.addDays(b, 1)) - x(a))}%;${style || ''}" title="${esc(tip || label)}"><span>${esc(label || '')}</span></i>`;
+  const lines = `<i class="tl-today" style="left:${x(d)}%"></i><i class="tl-exam" style="left:${x(g.examDate)}%"></i>`;
+  const row = (label, inner, cls = '') => `<div class="tl-row ${cls}"><span class="tl-lab" title="${esc(label)}">${esc(label)}</span><div class="tl-track">${inner}${lines}</div></div>`;
+  // 月の目盛り
+  let months = '', lastX = -100, first = true;
+  for (let m0 = P.toDate(start), mm = new Date(m0.getFullYear(), m0.getMonth(), 1); P.fmt(mm) <= end; mm.setMonth(mm.getMonth() + 1)) {
+    const day = P.fmt(mm) < start ? start : P.fmt(mm);
+    if (x(day) - lastX < 6) continue; // 近すぎる目盛り（はじめの月の途中など）は出さない
+    if (P.fmt(mm) < start && P.diffDays(start, P.fmt(new Date(mm.getFullYear(), mm.getMonth() + 1, 1))) < 12) continue;
+    months += `<span class="tl-mon" style="left:${x(day)}%">${mm.getMonth() === 0 || first ? `${mm.getFullYear()}年` : ''}${mm.getMonth() + 1}月</span>`;
+    lastX = x(day); first = false;
+  }
+  const head = `<div class="tl-row tl-head"><span class="tl-lab"></span><div class="tl-track">${months}<span class="tl-mark today" style="left:${x(d)}%">今日</span><span class="tl-mark exam${x(g.examDate) > 95 ? ' end' : ''}" style="left:${x(g.examDate)}%">試験</span></div></div>`;
+  // 時期（矢印の帯）
+  const ph = phases.length ? row('時期', phases.map((f, i) => bar(f.from, f.to, `tl-ph ph${i % 4}`, '', f.name, `${f.name}：${md(f.from)}〜${md(f.to)}`)).join(''), 'tl-phases') : '';
+  // 教材: 1周目は区切りごと、2周目からは周ごと
+  const matRows = mats.map(m => {
+    const plan = P.roundPlan(m, d);
+    let inner = '';
+    plan.forEach((r, i) => {
+      const a = i === 0 ? m.start : P.addDays(plan[i - 1].date, 1);
+      const b = r.date < a ? a : r.date;
+      const ss = P.sectionsOf(m);
+      if (i === 0 && ss) {
+        ss.forEach((sec, j) => {
+          const sa = j === 0 ? a : sec.start;
+          const sb = j + 1 < ss.length ? P.addDays(ss[j + 1].start, -1) : b;
+          if (sb >= sa) inner += bar(sa, sb, `tl-sec${j % 2 ? ' alt' : ''}${r.state === 'done' ? ' done' : ''}`, tileColor(m, 1), sec.name, `1周目 ${sec.name}：${md(sa)}〜${md(sb)}`);
+        });
+      } else inner += bar(a, b, `tl-round${r.state === 'done' ? ' done' : ''}`, tileColor(m, r.r), `${r.r}周目`, `${r.r}周目：${md(a)}〜${md(b)}${r.state === 'done' ? '（終わりました）' : r.state === 'now' ? '（いまここ）' : '（予定）'}`);
+    });
+    return row(m.name, inner);
+  }).join('');
+  // 予定
+  const evRows = eventRows(g).map(([k, list]) => row(k, list.map(ev => {
+    const short = ev.title.startsWith(k) ? ev.title.slice(k.length).trim() : ev.title.replace(/（.*$/, '');
+    const lab = k === '講座・模試など' || list.length < 3 ? short.replace(/（.*$/, '').replace(/(完全)?マスター|対策|講座|アドバンス|公開/g, '') || short : ''; // 短い名前（例: 改正法・白書・模試）
+    return `<i class="tl-ev${ev.done ? ' done' : ''}${!ev.done && ev.date < d ? ' late' : ''}" style="left:${x(ev.date)}%" title="${esc(`${mdw(ev.date)} ${ev.title}${ev.done ? '（済み）' : ''}`)}"></i>${lab ? `<span class="tl-evl" style="left:${x(ev.date)}%">${esc(lab)}</span>` : ''}`;
+  }).join(''), 'tl-evrow')).join('');
+  return `<div class="tl-scroll"><div class="tl" role="img" aria-label="全体スケジュール">${head}${ph}${matRows}${evRows}</div></div>
+  <div class="legend"><span><i class="tl-k today"></i>今日</span><span><i class="tl-k exam"></i>試験日</span><span><i class="tl-k ev"></i>予定</span><span><i class="tl-k evdone"></i>済み</span><span><i class="tl-k late"></i>過ぎたのにまだ</span>
+  <span class="sub">教材の帯は、いまのペースで計算した予定です。帯や印に指を置く（マウスを重ねる）と日付が出ます。</span></div>`;
+}
 /** カレンダーの印: 試験日と予定 */
 function goalMarks(g) {
   const marks = { [g.examDate]: '試験日' };
@@ -418,6 +483,11 @@ function goalView() {
     <div class="stat"><span class="label">今日の残り</span><span class="v num">${leftToday}</span><span class="s">ページ・問の合計</span></div>
     <div class="stat"><span class="label">教材</span><span class="v num">${mats.length}<small>冊</small></span><span class="s">${streakHtml(mats, d)}</span></div>
   </div>
+  <section class="panel">
+    <h2>全体スケジュール <span class="label">${md(g.examDate)}の試験までの流れ</span></h2>
+    ${timeline(g, mats, d)}
+    ${(g.phases || []).length ? '' : '<div class="sub">「目標を編集」で時期（例: 基礎・直前）を入れると、いちばん上に矢印の帯で出ます。</div>'}
+  </section>
   ${mats.length ? `
   <section class="panel">
     <h2>教材ごとの進み具合 <span class="label">濃い色＝回転の進み・薄い色＝1回目が終わったページ</span></h2>
@@ -607,10 +677,17 @@ function goalForm() {
       <div class="field"><label for="g-target">択一式の目標点（任意）</label><input id="g-target" type="number" min="1" max="70" inputmode="numeric" value="${esc(v.scoreTarget || '')}" placeholder="例: 50"><span class="hint">点数の記録のグラフに線を引きます。</span></div>
       <div class="field full"><label>曜日ごとの量</label><div class="wds">${[1, 2, 3, 4, 5, 6, 0].map(wsel).join('')}</div>
         <span class="hint">この目標の教材の、曜日ごとのノルマの比率です。「×2」の日は「×1」の日の2倍、「休み」の日はノルマが出ません。例: 平日×1、土日×2.5（平日2時間・土日5時間のとき）。</span></div>
+      <div class="field full"><label>時期（任意）</label>
+        <span class="hint">全体スケジュールのいちばん上に矢印の帯で出ます。例: 基礎（11/4〜4/3）→ 2周目と弱点つぶし → 実戦 → 直前の仕上げ。</span>
+        <div id="phrows">${(v.phases || []).map(f => phRow(f.name, f.from, f.to)).join('')}</div>
+        <div><button class="btn sm" type="button" data-act="addph">＋ 時期を追加</button></div></div>
       ${ui.formErr ? `<div class="full err-text">${esc(ui.formErr)}</div>` : ''}
       <div class="actions full"><button class="btn primary" type="submit">${g ? '変更を保存' : '作る'}</button></div>
     </form>
   </section>`;
+}
+function phRow(name = '', from = '', to = '') {
+  return `<div class="ph-row"><input class="ph-name" maxlength="20" value="${esc(name)}" placeholder="例: 基礎" aria-label="時期の名前"><input class="ph-from" type="date" value="${esc(from)}" aria-label="時期のはじめ"><span class="lbl">〜</span><input class="ph-to" type="date" value="${esc(to)}" aria-label="時期の終わり"><button class="btn ghost sm" type="button" data-act="delph" aria-label="この時期を消す">消す</button></div>`;
 }
 function account() {
   const local = store.localCounts();
@@ -704,6 +781,8 @@ document.addEventListener('click', e => {
     saveMat(P.undoDay(m, b.dataset.date).m, `${mdw(b.dataset.date)}の記録を取り消しました`);
   }
   else if (act === 'sample') addSample();
+  else if (act === 'addph') document.getElementById('phrows').insertAdjacentHTML('beforeend', phRow());
+  else if (act === 'delph') b.closest('.ph-row').remove();
   else if (act === 'addsec') { document.getElementById('secrows').insertAdjacentHTML('beforeend', secRow()); updatePreview(); }
   else if (act === 'delsec') { b.closest('.sec-row').remove(); updatePreview(); }
   else if (act === 'delev') { const g = goalById(id); save('goals', { ...g, events: (g.events || []).filter(x => x.id !== b.dataset.ev) }, '予定を削除しました'); }
@@ -825,8 +904,12 @@ function saveGoalForm() {
   const dayWeights = [0, 1, 2, 3, 4, 5, 6].map(i => Number(document.getElementById('g-w' + i).value));
   const scoreTarget = Number(document.getElementById('g-target').value) || null;
   if (!err && dayWeights.every(w => w === 0)) err = '曜日ごとの量が全部「休み」になっています。どこかの曜日を休み以外にしてください。';
+  const phases = [...document.querySelectorAll('#phrows .ph-row')].map(r => ({ name: r.querySelector('.ph-name').value.trim(), from: r.querySelector('.ph-from').value, to: r.querySelector('.ph-to').value }));
+  const badPh = phases.find(f => !f.name || !f.from || !f.to || f.to < f.from);
+  if (!err && badPh) err = `時期「${badPh.name || '（名前なし）'}」の名前・はじめ・終わりを入れてください（終わりは、はじめと同じ日か後）。`;
   if (err) { ui.formErr = err; render(); return; }
-  const g = old ? { ...old, name, examDate, dayWeights, scoreTarget } : { id: newId('g'), createdAt: Date.now(), name, examDate, dayWeights, scoreTarget, events: [], scores: [] };
+  phases.sort((a, b) => (a.from < b.from ? -1 : 1));
+  const g = old ? { ...old, name, examDate, dayWeights, scoreTarget, phases } : { id: newId('g'), createdAt: Date.now(), name, examDate, dayWeights, scoreTarget, phases, events: [], scores: [] };
   save('goals', g, old ? '目標を保存しました。教材の計画を組み直しました' : `目標「${name}」を作りました。教材を登録しましょう`);
   if (old) go('goal', g.id); else go('form', null, { goal: g.id });
 }
@@ -915,8 +998,8 @@ function applyImport() {
   if (!j) return;
   const sel = document.getElementById('imp-goal').value;
   let g;
-  if (sel === 'new') g = { id: newId('g'), createdAt: Date.now(), name: j.goal.name, examDate: j.goal.examDate, dayWeights: j.goal.dayWeights || null, scoreTarget: j.goal.scoreTarget || null, events: [], scores: [] };
-  else { g = { ...goalById(sel) }; if (!Array.isArray(g.dayWeights) && j.goal.dayWeights) g.dayWeights = j.goal.dayWeights; if (!g.scoreTarget && j.goal.scoreTarget) g.scoreTarget = j.goal.scoreTarget; }
+  if (sel === 'new') g = { id: newId('g'), createdAt: Date.now(), name: j.goal.name, examDate: j.goal.examDate, dayWeights: j.goal.dayWeights || null, scoreTarget: j.goal.scoreTarget || null, phases: j.goal.phases || [], events: [], scores: [] };
+  else { g = { ...goalById(sel) }; if (!Array.isArray(g.dayWeights) && j.goal.dayWeights) g.dayWeights = j.goal.dayWeights; if (!g.scoreTarget && j.goal.scoreTarget) g.scoreTarget = j.goal.scoreTarget; if (!(g.phases || []).length && j.goal.phases) g.phases = j.goal.phases; }
   // 置き換える教材（記録は計画ファイルの教材に引き継ぎ済み）を削除し、同じ名前の教材は二重に入れない
   const replace = new Set(document.getElementById('imp-replace') && document.getElementById('imp-replace').checked ? (j.replaceNames || []) : []);
   const inGoal = store.mats.filter(m => m.goalId === g.id);

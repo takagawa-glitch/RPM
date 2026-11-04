@@ -18,6 +18,7 @@
   --good: #13A06A;       /* 達成 */
   --late: #D96A1E;       /* 遅れ（赤にしない） */
   --bad: #C9413A;        /* 削除・エラーだけ */
+  --ph0: #4A505C; --ph1: #2E3F73; --ph2: #74303C; --ph3: #8C6A38; --on-ph: #FFFFFF; /* 全体スケジュールの時期の帯 */
   --font-display: "Chakra Petch", "Zen Kaku Gothic New", system-ui, sans-serif;
   --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
   --r: 10px;
@@ -256,6 +257,42 @@ input[readonly] { color: var(--muted); }
 .sj input { padding: 6px; }
 .sjbox { display: flex; flex-direction: column; gap: 6px; }
 
+/* 全体スケジュール */
+.tl-scroll { overflow-x: auto; padding-bottom: 4px; }
+.tl { min-width: 760px; display: flex; flex-direction: column; gap: 6px; }
+.tl-row { display: grid; grid-template-columns: 11em minmax(0, 1fr); align-items: center; gap: 8px; }
+.tl-lab { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-track { position: relative; height: 26px; background: var(--bg); border-radius: 4px; }
+.tl-head .tl-track { height: 24px; background: transparent; }
+.tl-mon { position: absolute; top: 0; height: 100%; padding-left: 3px; border-left: 1px solid var(--line); font-size: 11px; color: var(--muted); white-space: nowrap; font-family: var(--font-display); }
+.tl-mark { position: absolute; bottom: -4px; transform: translateX(-50%); padding: 0 4px; border-radius: 4px; background: var(--surface); font-size: 10px; font-weight: 700; z-index: 3; white-space: nowrap; }
+.tl-mark.today { color: var(--hot); }
+.tl-mark.exam { color: var(--ink); }
+.tl-mark.exam.end { transform: translateX(-100%); }
+.tl-bar { position: absolute; top: 3px; bottom: 3px; display: flex; align-items: center; border-radius: 3px; overflow: hidden; font-style: normal; font-size: 11px; color: var(--ink); box-shadow: inset 0 0 0 1px var(--surface); }
+.tl-bar span { padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-sec.alt { opacity: .78; }
+.tl-bar.done { opacity: .5; }
+.tl-phases .tl-track { height: 30px; background: transparent; }
+.tl-ph { top: 0; bottom: 0; border-radius: 0; box-shadow: none; color: var(--on-ph); font-weight: 700; font-size: 12px; padding-left: 10px;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%); }
+.tl-ph.ph0 { background: var(--ph0); } .tl-ph.ph1 { background: var(--ph1); } .tl-ph.ph2 { background: var(--ph2); } .tl-ph.ph3 { background: var(--ph3); }
+.tl-today { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--hot); z-index: 2; }
+.tl-exam { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink); opacity: .55; z-index: 2; }
+.tl-ev { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--surface); border: 2px solid var(--rev); z-index: 1; font-style: normal; }
+.tl-ev.done { background: var(--rev); }
+.tl-ev.late { border-color: var(--late); }
+.tl-evl { position: absolute; top: 50%; transform: translateY(-50%); margin-left: 8px; font-size: 10px; color: var(--muted); white-space: nowrap; }
+.legend i.tl-k { border-radius: 0; background: transparent; }
+.legend i.tl-k.today { width: 3px; background: var(--hot); }
+.legend i.tl-k.exam { width: 3px; background: var(--ink); opacity: .55; }
+.legend i.tl-k.ev, .legend i.tl-k.evdone, .legend i.tl-k.late { border-radius: 50%; border: 2px solid var(--rev); background: var(--surface); }
+.legend i.tl-k.evdone { background: var(--rev); }
+.legend i.tl-k.late { border-color: var(--late); }
+#phrows { display: flex; flex-direction: column; gap: 6px; }
+.ph-row { display: grid; grid-template-columns: minmax(0, 1fr) 11em auto 11em auto; gap: 6px; align-items: center; }
+.ph-row input { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 7px 8px; width: 100%; }
+
 /* 版の表示 */
 .foot { text-align: center; color: var(--muted); font-size: 12px; font-family: var(--font-display); padding-top: 8px; }
 .note.newver { border-style: solid; border-color: var(--rev); color: var(--ink); }
@@ -314,6 +351,8 @@ input[readonly] { color: var(--muted); }
   .gm-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .seg.theme { flex-direction: column; }
   .sec-row { grid-template-columns: minmax(0, 1fr) 5em; }
+  .ph-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .ph-row .ph-name { grid-column: 1 / -1; }
   .sec-row .sr-start { grid-column: 1; }
   .wds { gap: 3px; }
   .wd select { font-size: 13px; }
